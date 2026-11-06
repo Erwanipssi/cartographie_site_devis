@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { buildWorkbook } from '../src/modules/exporter/workbook'
 
 describe('buildWorkbook', () => {
-  it('produit les quatre feuilles et le libellé OCR', async () => {
+  it('produit les cinq feuilles et le libellé OCR', async () => {
     const buffer = await buildWorkbook({
       sites: [
         {
@@ -36,7 +36,7 @@ describe('buildWorkbook', () => {
     const ExcelJS = await import('exceljs')
     const workbook = new ExcelJS.Workbook()
     await workbook.xlsx.load(buffer as never)
-    expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(['Synthèse', 'Pages', 'PDF', 'Erreurs'])
+    expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(['Synthèse', 'PDF à traiter', 'Pages', 'PDF', 'Erreurs'])
     expect(workbook.getWorksheet('PDF')?.getCell('C2').value).toBe('Non OCRisé')
     expect(workbook.getWorksheet('Synthèse')?.getCell('A1').value).toBe('Site')
   })

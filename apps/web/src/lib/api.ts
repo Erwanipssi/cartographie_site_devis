@@ -207,3 +207,33 @@ export function exportUrl(analysisId: string): string {
 export function sitemapUrl(analysisId: string, analysisSiteId: string): string {
   return `/api/analyses/${analysisId}/sites/${analysisSiteId}/sitemap.xml`
 }
+
+export type TriageStatus = 'image' | 'partial' | 'error'
+
+export type PdfToFix = {
+  url: string
+  name: string
+  ocrStatus: TriageStatus
+  pageCount: number | null
+  pagesWithoutText: number | null
+  sizeBytes: number | null
+  parentUrl: string | null
+  errorMessage: string | null
+  site: string
+  analysisSiteId: string
+}
+
+export type PdfsToFixResult = PageResult<PdfToFix> & { counts: Record<TriageStatus, number> }
+
+export function pdfsToFix(analysisId: string, params: Record<string, string | number | undefined>): Promise<PdfsToFixResult> {
+  const search = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) if (value !== undefined && value !== '') search.set(key, String(value))
+  return fetch(`/api/analyses/${analysisId}/pdfs-to-fix?${search}`).then(async (response) => {
+    if (!response.ok) throw new Error(`Erreur ${response.status}`)
+    return response.json() as Promise<PdfsToFixResult>
+  })
+}
+
+export function pdfsToFixCsvUrl(analysisId: string, statuses: TriageStatus[]): string {
+  return `/api/analyses/${analysisId}/pdfs-to-fix.csv?status=${statuses.join(',')}`
+}

@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { OCR_LABELS } from '@cartographie/shared'
 import { env } from '../../env'
+import { sortForTriage, TRIAGE_STATUSES, type TriageStatus } from '../../lib/pdf-triage'
 import { prisma } from '../../lib/prisma'
 import { buildWorkbook, type ExportData } from './workbook'
 
@@ -54,7 +55,24 @@ export async function loadAnalysisExport(analysisId: string): Promise<Buffer> {
         pageCount: pdf.pageCount,
         pagesWithText: pdf.pagesWithText,
         sizeBytes: pdf.sizeBytes,
+        parentUrl: pdf.parentUrl,
       })),
+    ),
+    toFix: sortForTriage(
+      analysis.sites.flatMap((row) =>
+        row.pdfs
+          .filter((pdf): pdf is typeof pdf & { ocrStatus: TriageStatus } => (TRIAGE_STATUSES as readonly string[]).includes(pdf.ocrStatus))
+          .map((pdf) => ({
+            site: row.site.hostname,
+            url: pdf.url,
+            ocrStatus: pdf.ocrStatus,
+            pageCount: pdf.pageCount,
+            pagesWithoutText: pdf.pagesWithoutText,
+            sizeBytes: pdf.sizeBytes,
+            parentUrl: pdf.parentUrl,
+            errorMessage: pdf.errorMessage,
+          })),
+      ),
     ),
     errors: analysis.sites.flatMap((row) =>
       row.errors.map((error) => ({

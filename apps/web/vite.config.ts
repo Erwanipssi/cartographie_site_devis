@@ -11,6 +11,8 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // Port occupé : erreur explicite plutôt qu’un passage discret sur 5174 (les liens et le README pointent sur 5173).
+    strictPort: true,
     fs: { allow: ['../..'] },
     proxy: {
       '/api': {

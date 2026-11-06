@@ -9,6 +9,7 @@ import { ApiError, pageWindow } from '../lib/http'
 import { prisma } from '../lib/prisma'
 import { mailQueue } from '../lib/queues'
 import { readConfig, startAnalysis } from '../modules/analyses/service'
+import { documentName, parseTriageStatuses, TRIAGE_STATUSES, triageCsv, type TriageStatus } from '../lib/pdf-triage'
 import { buildSitemapXml } from '../lib/sitemap'
 import { loadAnalysisExport } from '../modules/exporter/export-analysis'
 
@@ -21,6 +22,15 @@ const listQuery = z.object({
   sort: z.string().optional(),
   dir: z.enum(['asc', 'desc']).optional(),
   ocrStatus: ocrStatusSchema.optional(),
+})
+const toFixQuery = z.object({
+  page: z.string().optional(),
+  pageSize: z.string().optional(),
+  q: z.string().max(200).optional(),
+  /** Statuts séparés par des virgules (image,partial,error). Défaut : image,partial. */
+  status: z.string().max(40).optional(),
+  /** Limiter à un site de l'analyse (id d'AnalysisSite). */
+  site: z.string().max(40).optional(),
 })
 
 export async function registerAnalyses(app: FastifyInstance): Promise<void> {
@@ -173,6 +183,64 @@ export async function registerAnalyses(app: FastifyInstance): Promise<void> {
       prisma.crawlError.findMany({ where, orderBy: { createdAt: 'desc' }, skip: window.skip, take: window.take }),
     ])
     return { items, total, page: window.page, pageSize: window.pageSize }
+  })
+
+  // PDF à traiter : tous les sites de l'analyse, du plus urgent (aucune page lisible) au moins urgent.
+  const toFixWhere = async (analysisId: string, query: z.infer<typeof toFixQuery>) => {
+    const analysis = await prisma.analysis.findUnique({ where: { id: analysisId }, select: { id: true } })
+    if (!analysis) throw new ApiError(404, 'Analyse introuvable', 'NOT_FOUND')
+    return {
+      analysisSite: { analysisId },
+      ...(query.site ? { analysisSiteId: query.site } : {}),
+      ...(query.q ? { url: { contains: query.q, mode: 'insensitive' as const } } : {}),
+    }
+  }
+  const toFixOrder = [{ ocrStatus: 'asc' as const }, { pagesWithoutText: { sort: 'desc' as const, nulls: 'last' as const } }, { url: 'asc' as const }]
+  const toFixSelect = {
+    url: true,
+    ocrStatus: true,
+    pageCount: true,
+    pagesWithoutText: true,
+    sizeBytes: true,
+    parentUrl: true,
+    errorMessage: true,
+    analysisSite: { select: { id: true, site: { select: { hostname: true } } } },
+  } as const
+
+  route.get('/api/analyses/:id/pdfs-to-fix', { schema: { params: idParams, querystring: toFixQuery } }, async (request) => {
+    const base = await toFixWhere(request.params.id, request.query)
+    const statuses = parseTriageStatuses(request.query.status)
+    const window = pageWindow(request.query)
+    const where = { ...base, ocrStatus: { in: statuses } }
+    const [total, rows, grouped] = await Promise.all([
+      prisma.pdfDocument.count({ where }),
+      prisma.pdfDocument.findMany({ where, orderBy: toFixOrder, skip: window.skip, take: window.take, select: toFixSelect }),
+      prisma.pdfDocument.groupBy({ by: ['ocrStatus'], where: { ...base, ocrStatus: { in: [...TRIAGE_STATUSES] } }, _count: { _all: true } }),
+    ])
+    const counts = Object.fromEntries(TRIAGE_STATUSES.map((status) => [status, grouped.find((group) => group.ocrStatus === status)?._count._all ?? 0]))
+    const items = rows.map(({ analysisSite, ...pdf }) => ({
+      ...pdf,
+      name: documentName(pdf.url),
+      site: analysisSite.site.hostname,
+      analysisSiteId: analysisSite.id,
+    }))
+    return { items, total, counts, page: window.page, pageSize: window.pageSize }
+  })
+
+  route.get('/api/analyses/:id/pdfs-to-fix.csv', { schema: { params: idParams, querystring: toFixQuery } }, async (request, reply) => {
+    const base = await toFixWhere(request.params.id, request.query)
+    const rows = await prisma.pdfDocument.findMany({
+      where: { ...base, ocrStatus: { in: parseTriageStatuses(request.query.status) } },
+      orderBy: toFixOrder,
+      select: toFixSelect,
+    })
+    const csv = triageCsv(
+      rows.map(({ analysisSite, ...pdf }) => ({ ...pdf, ocrStatus: pdf.ocrStatus as TriageStatus, site: analysisSite.site.hostname })),
+    )
+    return reply
+      .header('Content-Type', 'text/csv; charset=utf-8')
+      .header('Content-Disposition', `attachment; filename="pdf-a-traiter-${request.params.id.slice(0, 8)}.csv"`)
+      .send(csv)
   })
 
   route.get('/api/analyses/:id/export', { schema: { params: idParams } }, async (request, reply) => {

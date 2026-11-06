@@ -1,5 +1,6 @@
 import ExcelJS from 'exceljs'
 import { OCR_LABELS, type OcrStatus } from '@cartographie/shared'
+import { documentName, TRIAGE_LABELS, type TriageRow } from '../../lib/pdf-triage'
 
 export type ExportSite = {
   hostname: string
@@ -31,6 +32,8 @@ export type ExportPdf = {
   pageCount: number | null
   pagesWithText: number | null
   sizeBytes: number | null
+  /** Page où le lien vers le PDF a été trouvé. */
+  parentUrl?: string | null
 }
 
 export type ExportError = {
@@ -46,6 +49,8 @@ export type ExportData = {
   pages: ExportPage[]
   pdfs: ExportPdf[]
   errors: ExportError[]
+  /** PDF à traiter, déjà triés par priorité (voir lib/pdf-triage). */
+  toFix?: TriageRow[]
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -102,6 +107,34 @@ export async function buildWorkbook(data: ExportData): Promise<Buffer> {
     })
   }
 
+  // Juste après la synthèse : la liste d'actions, du document le plus urgent au moins urgent.
+  const toFix = workbook.addWorksheet('PDF à traiter')
+  toFix.columns = [
+    { header: 'Statut', key: 'status' },
+    { header: 'Document', key: 'name' },
+    { header: 'Pages', key: 'pageCount' },
+    { header: 'Pages sans texte', key: 'pagesWithoutText' },
+    { header: 'Taille (Mo)', key: 'sizeMb' },
+    { header: 'Publié sur', key: 'parentUrl' },
+    { header: 'URL du PDF', key: 'url' },
+    { header: 'Site', key: 'site' },
+    { header: 'Détail', key: 'errorMessage' },
+  ]
+  prepare(toFix, [26, 48, 10, 16, 12, 56, 56, 24, 32])
+  for (const row of data.toFix ?? []) {
+    const added = toFix.addRow({
+      ...row,
+      status: TRIAGE_LABELS[row.ocrStatus],
+      name: documentName(row.url),
+      sizeMb: row.sizeBytes == null ? null : Math.round((row.sizeBytes / 1024 / 1024) * 100) / 100,
+    })
+    // Liens cliquables vers le PDF et vers la page où il est publié.
+    added.getCell('url').value = { text: row.url, hyperlink: row.url }
+    if (row.parentUrl) added.getCell('parentUrl').value = { text: row.parentUrl, hyperlink: row.parentUrl }
+    const fill = row.ocrStatus === 'image' ? 'FFF4C7C3' : row.ocrStatus === 'partial' ? 'FFF4E2C4' : 'FFE7E2D8'
+    added.getCell('status').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fill } }
+  }
+
   const pages = workbook.addWorksheet('Pages')
   pages.columns = [
     { header: 'Site', key: 'site' },
@@ -121,8 +154,9 @@ export async function buildWorkbook(data: ExportData): Promise<Buffer> {
     { header: 'Pages', key: 'pageCount' },
     { header: 'Pages avec texte', key: 'pagesWithText' },
     { header: 'Taille (octets)', key: 'sizeBytes' },
+    { header: 'Publié sur', key: 'parentUrl' },
   ]
-  prepare(pdfs, [28, 64, 20, 12, 20, 18])
+  prepare(pdfs, [28, 64, 20, 12, 20, 18, 56])
   for (const pdf of data.pdfs) {
     pdfs.addRow({ ...pdf, ocr: OCR_LABELS[pdf.ocrStatus] })
   }

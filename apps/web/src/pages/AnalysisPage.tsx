@@ -69,6 +69,23 @@ export function AnalysisPage() {
         <Metric label="PDF texte" value={totals.pdfText ?? 0} />
         <Metric label="Erreurs" value={totals.errors ?? 0} />
       </div>
+      {(totals.pdfImage ?? 0) + (totals.pdfPartial ?? 0) + (totals.pdfError ?? 0) > 0 ? (
+        <Link
+          to={`/analyses/${id}/pdf-a-traiter`}
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50/60 px-5 py-4 transition-colors hover:border-red-300 hover:bg-red-50"
+        >
+          <div>
+            <p className="font-semibold text-ink-950">
+              {(totals.pdfImage ?? 0) + (totals.pdfPartial ?? 0)} PDF à traiter
+              {(totals.pdfError ?? 0) > 0 ? <span className="font-normal text-ink-600"> · {totals.pdfError} illisible{(totals.pdfError ?? 0) > 1 ? 's' : ''}</span> : null}
+            </p>
+            <p className="text-sm text-ink-600">
+              {totals.pdfImage ?? 0} sans aucune page lisible, {totals.pdfPartial ?? 0} partiellement lisibles
+            </p>
+          </div>
+          <span className="text-sm font-medium text-ink-950">Voir la liste →</span>
+        </Link>
+      ) : null}
       <div className="grid gap-3 md:grid-cols-2">
         {rows.map((row) => (
           <ProgressCard key={row.id} row={row} analysisId={id} />
