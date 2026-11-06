@@ -56,6 +56,9 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+          # La v5 active d'elle-même un cache pnpm (champ packageManager) et cherche pnpm avant
+          # que corepack ne l'installe à l'étape suivante : on la désactive.
+          package-manager-cache: false
 
       - name: Activer pnpm (version fixée par packageManager)
         run: corepack enable
