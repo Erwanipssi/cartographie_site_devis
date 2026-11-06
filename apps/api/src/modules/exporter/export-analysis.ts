@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { OCR_LABELS } from '@cartographie/shared'
 import { env } from '../../env'
 import { sortForTriage, TRIAGE_STATUSES, type TriageStatus } from '../../lib/pdf-triage'
+import { logger } from '../../lib/logger'
 import { prisma } from '../../lib/prisma'
 import { buildWorkbook, type ExportData } from './workbook'
 
@@ -56,6 +57,10 @@ export async function loadAnalysisExport(analysisId: string): Promise<Buffer> {
         pagesWithText: pdf.pagesWithText,
         sizeBytes: pdf.sizeBytes,
         parentUrl: pdf.parentUrl,
+        tagged: pdf.tagged,
+        title: pdf.title,
+        titleStatus: pdf.titleStatus,
+        lang: pdf.lang,
       })),
     ),
     toFix: sortForTriage(
@@ -86,10 +91,16 @@ export async function loadAnalysisExport(analysisId: string): Promise<Buffer> {
   }
 
   const buffer = await buildWorkbook(data)
-  await mkdir(env.EXPORT_DIR, { recursive: true })
-  const file = join(env.EXPORT_DIR, `${analysisId}.xlsx`)
-  await writeFile(file, buffer)
-  await prisma.analysis.update({ where: { id: analysisId }, data: { exportPath: file } })
+  // La copie sur disque est un archivage : son échec (dossier en lecture seule, fichier verrouillé par un
+  // antivirus ou ouvert dans Excel) ne doit pas priver l'utilisateur du téléchargement.
+  try {
+    await mkdir(env.EXPORT_DIR, { recursive: true })
+    const file = join(env.EXPORT_DIR, `${analysisId}.xlsx`)
+    await writeFile(file, buffer)
+    await prisma.analysis.update({ where: { id: analysisId }, data: { exportPath: file } })
+  } catch (error) {
+    logger.warn({ err: error, analysisId }, 'classeur non archivé sur disque, téléchargement servi quand même')
+  }
   return buffer
 }
 

@@ -238,3 +238,36 @@ export function pdfsToFix(analysisId: string, params: Record<string, string | nu
 export function pdfsToFixCsvUrl(analysisId: string, statuses: TriageStatus[]): string {
   return `/api/analyses/${analysisId}/pdfs-to-fix.csv?status=${statuses.join(',')}`
 }
+
+export type A11yIssue = 'untagged' | 'notitle' | 'nolang'
+
+export type PdfAccessibility = {
+  url: string
+  name: string
+  ocrStatus: string
+  tagged: boolean | null
+  title: string | null
+  titleStatus: 'ok' | 'missing' | 'generic' | null
+  lang: string | null
+  parentUrl: string | null
+  site: string
+  analysisSiteId: string
+  issues: A11yIssue[]
+}
+
+export type PdfsAccessibilityResult = PageResult<PdfAccessibility> & {
+  counts: { checked: number; conform: number } & Record<A11yIssue, number>
+}
+
+export function pdfsAccessibility(analysisId: string, params: Record<string, string | number | undefined>): Promise<PdfsAccessibilityResult> {
+  const search = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) if (value !== undefined && value !== '') search.set(key, String(value))
+  return fetch(`/api/analyses/${analysisId}/pdfs-accessibility?${search}`).then(async (response) => {
+    if (!response.ok) throw new Error(`Erreur ${response.status}`)
+    return response.json() as Promise<PdfsAccessibilityResult>
+  })
+}
+
+export function pdfsAccessibilityCsvUrl(analysisId: string, issues: A11yIssue[]): string {
+  return `/api/analyses/${analysisId}/pdfs-accessibility.csv?issue=${issues.join(',')}`
+}

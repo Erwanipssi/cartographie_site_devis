@@ -2,7 +2,8 @@ import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { Notice } from '../components/Badges'
-import { exportUrl, pdfsToFix, pdfsToFixCsvUrl, type PdfToFix, type TriageStatus } from '../lib/api'
+import { PdfAccessibilityPanel } from '../components/PdfAccessibilityPanel'
+import { exportUrl, pdfsAccessibilityCsvUrl, pdfsToFix, pdfsToFixCsvUrl, type A11yIssue, type PdfToFix, type TriageStatus } from '../lib/api'
 import { formatBytes } from '../lib/format'
 
 const STATUSES: Array<{ key: TriageStatus; label: string; hint: string; tone: string }> = [
@@ -12,6 +13,12 @@ const STATUSES: Array<{ key: TriageStatus; label: string; hint: string; tone: st
 ]
 const PAGE_SIZE = 50
 
+type View = 'texte' | 'accessibilite'
+const VIEWS: Array<{ key: View; label: string }> = [
+  { key: 'texte', label: 'Couche texte' },
+  { key: 'accessibilite', label: 'Accessibilité' },
+]
+
 export function PdfToFixPage() {
   const { id = '' } = useParams()
   const [params, setParams] = useSearchParams()
@@ -20,10 +27,14 @@ export function PdfToFixPage() {
   const q = params.get('q') ?? ''
   const page = Number(params.get('page') ?? 1) || 1
   const [draft, setDraft] = useState(q)
+  const view: View = params.get('vue') === 'accessibilite' ? 'accessibilite' : 'texte'
+  const chosenIssues = params.get('defaut')?.split(',').filter((value): value is A11yIssue => ['untagged', 'notitle', 'nolang'].includes(value)) ?? []
+  const issues: A11yIssue[] = chosenIssues.length ? chosenIssues : ['untagged', 'notitle', 'nolang']
 
   const result = useQuery({
     queryKey: ['pdfs-to-fix', id, statuses.join(','), q, page],
     queryFn: () => pdfsToFix(id, { status: statuses.join(','), q, page, pageSize: PAGE_SIZE }),
+    enabled: view === 'texte',
   })
 
   const update = (changes: Record<string, string | null>) => {
@@ -53,11 +64,13 @@ export function PdfToFixPage() {
         <div>
           <h1>PDF à traiter</h1>
           <p className="mt-1 max-w-2xl text-sm text-ink-600">
-            Documents sans couche de texte exploitable, du plus urgent au moins urgent : les lecteurs d’écran et la recherche ne peuvent pas les lire.
+            {view === 'texte'
+              ? 'Documents sans couche de texte exploitable, du plus urgent au moins urgent : les lecteurs d’écran et la recherche ne peuvent pas les lire.'
+              : 'Documents lisibles mais incomplets pour les lecteurs d’écran : structure balisée, titre et langue déclarés (RGAA, documents bureautiques).'}
           </p>
         </div>
         <div className="flex gap-2">
-          <a className="btn-ghost" href={pdfsToFixCsvUrl(id, statuses)}>
+          <a className="btn-ghost" href={view === 'texte' ? pdfsToFixCsvUrl(id, statuses) : pdfsAccessibilityCsvUrl(id, issues)}>
             Exporter en CSV
           </a>
           <a className="btn-primary" href={exportUrl(id)} title="Classeur complet, avec un onglet « PDF à traiter »">
@@ -66,6 +79,48 @@ export function PdfToFixPage() {
         </div>
       </div>
 
+      <div className="flex gap-1 border-b border-line" role="tablist" aria-label="Type de contrôle">
+        {VIEWS.map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            role="tab"
+            aria-selected={view === item.key}
+            onClick={() => update({ vue: item.key === 'texte' ? null : item.key, page: '1' })}
+            className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors ${view === item.key ? 'border-ink-950 text-ink-950' : 'border-transparent text-ink-600 hover:text-ink-950'}`}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      <form
+        className="flex flex-wrap gap-2"
+        onSubmit={(event) => {
+          event.preventDefault()
+          update({ q: draft || null, page: '1' })
+        }}
+      >
+        <input className="field max-w-md" placeholder="Rechercher dans le nom ou l’adresse du PDF" value={draft} onChange={(event) => setDraft(event.target.value)} />
+        <button className="btn-ghost" type="submit">
+          Rechercher
+        </button>
+      </form>
+
+      {view === 'accessibilite' ? (
+        <PdfAccessibilityPanel
+          analysisId={id}
+          issues={issues}
+          q={q}
+          page={page}
+          onToggle={(issue) => {
+            const next = issues.includes(issue) ? issues.filter((item) => item !== issue) : [...issues, issue]
+            if (next.length) update({ defaut: next.join(','), page: '1' })
+          }}
+          onPage={(next) => update({ page: String(next) })}
+        />
+      ) : (
+      <>
       <div className="grid gap-3 sm:grid-cols-3" role="group" aria-label="Filtrer par statut">
         {STATUSES.map((status) => {
           const active = statuses.includes(status.key)
@@ -86,19 +141,6 @@ export function PdfToFixPage() {
           )
         })}
       </div>
-
-      <form
-        className="flex flex-wrap gap-2"
-        onSubmit={(event) => {
-          event.preventDefault()
-          update({ q: draft || null, page: '1' })
-        }}
-      >
-        <input className="field max-w-md" placeholder="Rechercher dans le nom ou l’adresse du PDF" value={draft} onChange={(event) => setDraft(event.target.value)} />
-        <button className="btn-ghost" type="submit">
-          Rechercher
-        </button>
-      </form>
 
       {result.isError ? <Notice tone="error">Impossible de charger la liste.</Notice> : null}
 
@@ -151,6 +193,8 @@ export function PdfToFixPage() {
           </div>
         ) : null}
       </div>
+      </>
+      )}
     </div>
   )
 }

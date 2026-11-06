@@ -48,11 +48,11 @@ export type TriageRow = {
 }
 
 /** Marque d'ordre des octets UTF-8 : sans elle, Excel lit le CSV en Windows-1252 et casse les accents. */
-const BOM = String.fromCharCode(0xfeff)
+export const BOM = String.fromCharCode(0xfeff)
 
 const CSV_HEADER = ['Statut', 'Document', 'Pages', 'Pages sans texte', 'Taille (Mo)', 'Publié sur', 'URL du PDF', 'Site', 'Détail']
 
-function csvCell(value: string | number | null): string {
+export function csvCell(value: string | number | null): string {
   if (value == null) return ''
   const text = String(value)
   return /[";\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text

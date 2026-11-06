@@ -15,6 +15,7 @@ import { executeSchedule } from './modules/scheduler/run'
 import { syncAllSchedules } from './modules/scheduler/sync'
 import { readConfig } from './modules/analyses/service'
 import { sweepStalledWork } from './modules/analyses/watchdog'
+import { titleStatus } from './lib/pdf-accessibility'
 
 const PDF_MIN_TIMEOUT_MS = 60_000
 
@@ -173,6 +174,7 @@ async function main(): Promise<void> {
           sizeBytes: fetched.sizeBytes,
           httpStatus: fetched.status,
           contentType: fetched.contentType,
+          a11y: { tagged: inspection.tagged, title: inspection.title, titleStatus: titleStatus(inspection.title), lang: inspection.lang },
         })
       } catch (error) {
         await fail(pdfFailureMessage(error), { httpStatus: fetched.status, contentType: fetched.contentType, sizeBytes: fetched.sizeBytes })

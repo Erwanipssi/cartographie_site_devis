@@ -9,6 +9,8 @@ import { ApiError, pageWindow } from '../lib/http'
 import { prisma } from '../lib/prisma'
 import { mailQueue } from '../lib/queues'
 import { readConfig, startAnalysis } from '../modules/analyses/service'
+import type { Prisma } from '@prisma/client'
+import { a11yCsv, a11yIssues, parseA11yIssues, type A11yIssue } from '../lib/pdf-accessibility'
 import { documentName, parseTriageStatuses, TRIAGE_STATUSES, triageCsv, type TriageStatus } from '../lib/pdf-triage'
 import { buildSitemapXml } from '../lib/sitemap'
 import { loadAnalysisExport } from '../modules/exporter/export-analysis'
@@ -31,6 +33,11 @@ const toFixQuery = z.object({
   status: z.string().max(40).optional(),
   /** Limiter à un site de l'analyse (id d'AnalysisSite). */
   site: z.string().max(40).optional(),
+})
+
+const a11yQuery = toFixQuery.omit({ status: true }).extend({
+  /** Défauts séparés par des virgules (untagged,notitle,nolang). Défaut : tous. */
+  issue: z.string().max(40).optional(),
 })
 
 export async function registerAnalyses(app: FastifyInstance): Promise<void> {
@@ -240,6 +247,52 @@ export async function registerAnalyses(app: FastifyInstance): Promise<void> {
     return reply
       .header('Content-Type', 'text/csv; charset=utf-8')
       .header('Content-Disposition', `attachment; filename="pdf-a-traiter-${request.params.id.slice(0, 8)}.csv"`)
+      .send(csv)
+  })
+
+  // Accessibilité : PDF contrôlés (balisage, titre, langue) présentant au moins un des défauts demandés.
+  const a11yIssueWhere: Record<A11yIssue, Prisma.PdfDocumentWhereInput> = {
+    untagged: { tagged: false },
+    notitle: { titleStatus: { in: ['missing', 'generic'] } },
+    nolang: { lang: null },
+  }
+  const a11yWhere = async (analysisId: string, query: z.infer<typeof a11yQuery>) => {
+    const base = await toFixWhere(analysisId, query)
+    return { ...base, tagged: { not: null }, OR: parseA11yIssues(query.issue).map((issue) => a11yIssueWhere[issue]) }
+  }
+  const a11yOrder = [{ tagged: 'asc' as const }, { titleStatus: 'asc' as const }, { lang: { sort: 'asc' as const, nulls: 'first' as const } }, { url: 'asc' as const }]
+  const a11ySelect = { ...toFixSelect, tagged: true, title: true, titleStatus: true, lang: true } as const
+
+  route.get('/api/analyses/:id/pdfs-accessibility', { schema: { params: idParams, querystring: a11yQuery } }, async (request) => {
+    const base = await toFixWhere(request.params.id, request.query)
+    const checked = { ...base, tagged: { not: null } }
+    const where = await a11yWhere(request.params.id, request.query)
+    const window = pageWindow(request.query)
+    const [total, rows, checkedCount, conform, untagged, notitle, nolang] = await Promise.all([
+      prisma.pdfDocument.count({ where }),
+      prisma.pdfDocument.findMany({ where, orderBy: a11yOrder, skip: window.skip, take: window.take, select: a11ySelect }),
+      prisma.pdfDocument.count({ where: checked }),
+      prisma.pdfDocument.count({ where: { ...checked, tagged: true, titleStatus: 'ok', lang: { not: null } } }),
+      prisma.pdfDocument.count({ where: { ...checked, ...a11yIssueWhere.untagged } }),
+      prisma.pdfDocument.count({ where: { ...checked, ...a11yIssueWhere.notitle } }),
+      prisma.pdfDocument.count({ where: { ...checked, ...a11yIssueWhere.nolang } }),
+    ])
+    const items = rows.map(({ analysisSite, ...pdf }) => ({
+      ...pdf,
+      name: documentName(pdf.url),
+      site: analysisSite.site.hostname,
+      analysisSiteId: analysisSite.id,
+      issues: a11yIssues(pdf),
+    }))
+    return { items, total, counts: { checked: checkedCount, conform, untagged, notitle, nolang }, page: window.page, pageSize: window.pageSize }
+  })
+
+  route.get('/api/analyses/:id/pdfs-accessibility.csv', { schema: { params: idParams, querystring: a11yQuery } }, async (request, reply) => {
+    const rows = await prisma.pdfDocument.findMany({ where: await a11yWhere(request.params.id, request.query), orderBy: a11yOrder, select: a11ySelect })
+    const csv = a11yCsv(rows.map(({ analysisSite, ...pdf }) => ({ ...pdf, site: analysisSite.site.hostname })))
+    return reply
+      .header('Content-Type', 'text/csv; charset=utf-8')
+      .header('Content-Disposition', `attachment; filename="pdf-accessibilite-${request.params.id.slice(0, 8)}.csv"`)
       .send(csv)
   })
 

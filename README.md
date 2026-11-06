@@ -103,6 +103,15 @@ Les tests couvrent la normalisation d’URL, le refus des adresses privées, la 
 
 Les tests d’intégration (`apps/api/tests/integration`) utilisent la vraie base et le vrai Redis de `pnpm start` : chaque exécution crée un schéma PostgreSQL jetable, y applique les migrations, déroule une analyse complète et la surveillance des analyses figées, puis supprime le schéma. Sans Docker, ils sont ignorés.
 
+## PDF à traiter et accessibilité
+
+Depuis une analyse, « PDF à traiter » propose deux vues, chacune exportable en CSV et reprise dans le classeur Excel :
+
+- **Couche texte** : PDF non OCRisés, partiels ou illisibles, du plus urgent au moins urgent.
+- **Accessibilité** (critères RGAA sur les documents bureautiques) : PDF non balisés, sans titre ou avec un titre non pertinent (« Microsoft Word - … », nom de fichier, champs de publipostage), ou sans langue déclarée.
+
+Les contrôles d’accessibilité ne concernent que les PDF analysés après leur ajout : relancez l’analyse d’un site pour les obtenir.
+
 ## Analyses figées
 
 Le worker vérifie chaque minute les analyses en cours. Un site dont le traitement a disparu de la file ou a échoué passe en échec, avec la raison affichée sur l’analyse ; un PDF dont l’analyse s’est perdue est clôturé en erreur pour que l’analyse se termine. Un traitement encore actif n’est jamais interrompu.

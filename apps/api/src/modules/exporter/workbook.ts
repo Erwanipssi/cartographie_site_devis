@@ -1,5 +1,6 @@
 import ExcelJS from 'exceljs'
 import { OCR_LABELS, type OcrStatus } from '@cartographie/shared'
+import { A11Y_LABELS, a11yIssues } from '../../lib/pdf-accessibility'
 import { documentName, TRIAGE_LABELS, type TriageRow } from '../../lib/pdf-triage'
 
 export type ExportSite = {
@@ -34,6 +35,11 @@ export type ExportPdf = {
   sizeBytes: number | null
   /** Page où le lien vers le PDF a été trouvé. */
   parentUrl?: string | null
+  /** Accessibilité : null tant que le PDF n'a pas été contrôlé. */
+  tagged?: boolean | null
+  title?: string | null
+  titleStatus?: string | null
+  lang?: string | null
 }
 
 export type ExportError = {
@@ -75,6 +81,18 @@ function prepare(sheet: ExcelJS.Worksheet, widths: number[]): void {
   sheet.autoFilter = {
     from: { row: 1, column: 1 },
     to: { row: 1, column: widths.length },
+  }
+}
+
+const TITLE_LABELS: Record<string, string> = { ok: 'Oui', missing: 'Absent', generic: 'Non pertinent' }
+
+/** Libellés lisibles des contrôles ; cellules vides si le PDF n’a pas été contrôlé. */
+function a11yLabels(pdf: ExportPdf) {
+  if (pdf.tagged == null) return { taggedLabel: null, titleLabel: null, langLabel: null }
+  return {
+    taggedLabel: pdf.tagged ? 'Oui' : 'Non',
+    titleLabel: TITLE_LABELS[pdf.titleStatus ?? ''] ?? null,
+    langLabel: pdf.lang ?? 'Non déclarée',
   }
 }
 
@@ -155,10 +173,13 @@ export async function buildWorkbook(data: ExportData): Promise<Buffer> {
     { header: 'Pages avec texte', key: 'pagesWithText' },
     { header: 'Taille (octets)', key: 'sizeBytes' },
     { header: 'Publié sur', key: 'parentUrl' },
+    { header: 'Balisé', key: 'taggedLabel' },
+    { header: 'Titre', key: 'titleLabel' },
+    { header: 'Langue', key: 'langLabel' },
   ]
-  prepare(pdfs, [28, 64, 20, 12, 20, 18, 56])
+  prepare(pdfs, [28, 64, 20, 12, 20, 18, 56, 10, 16, 12])
   for (const pdf of data.pdfs) {
-    pdfs.addRow({ ...pdf, ocr: OCR_LABELS[pdf.ocrStatus] })
+    pdfs.addRow({ ...pdf, ocr: OCR_LABELS[pdf.ocrStatus], ...a11yLabels(pdf) })
   }
   pdfs.addConditionalFormatting({
     ref: 'C2:C5000',
@@ -193,6 +214,37 @@ export async function buildWorkbook(data: ExportData): Promise<Buffer> {
       },
     ],
   })
+
+  // Accessibilité : PDF contrôlés présentant au moins un défaut (balisage, titre, langue).
+  const a11y = workbook.addWorksheet('Accessibilité PDF')
+  a11y.columns = [
+    { header: 'Document', key: 'name' },
+    { header: 'Défauts', key: 'issues' },
+    { header: 'Balisé', key: 'taggedLabel' },
+    { header: 'Titre', key: 'titleLabel' },
+    { header: 'Titre déclaré', key: 'title' },
+    { header: 'Langue', key: 'langLabel' },
+    { header: 'Couche texte', key: 'ocr' },
+    { header: 'Publié sur', key: 'parentUrl' },
+    { header: 'URL du PDF', key: 'url' },
+    { header: 'Site', key: 'site' },
+  ]
+  prepare(a11y, [44, 40, 10, 16, 40, 12, 20, 56, 56, 24])
+  const withIssues = data.pdfs
+    .map((pdf) => ({ pdf, issues: a11yIssues({ tagged: pdf.tagged ?? null, titleStatus: pdf.titleStatus ?? null, lang: pdf.lang ?? null }) }))
+    .filter(({ issues }) => issues.length > 0)
+    .sort((a, b) => b.issues.length - a.issues.length || a.pdf.url.localeCompare(b.pdf.url))
+  for (const { pdf, issues } of withIssues) {
+    const added = a11y.addRow({
+      ...pdf,
+      ...a11yLabels(pdf),
+      name: documentName(pdf.url),
+      issues: issues.map((issue) => A11Y_LABELS[issue]).join(', '),
+      ocr: OCR_LABELS[pdf.ocrStatus],
+    })
+    added.getCell('url').value = { text: pdf.url, hyperlink: pdf.url }
+    if (pdf.parentUrl) added.getCell('parentUrl').value = { text: pdf.parentUrl, hyperlink: pdf.parentUrl }
+  }
 
   const errors = workbook.addWorksheet('Erreurs')
   errors.columns = [

@@ -191,6 +191,8 @@ export async function onPdfAnalyzed(input: {
   /** Code HTTP et type relevés au téléchargement (absents quand le crawler les a déjà). */
   httpStatus?: number | null
   contentType?: string | null
+  /** Contrôles d’accessibilité, absents si le PDF n’a pas pu être lu. */
+  a11y?: { tagged: boolean; title: string | null; titleStatus: string; lang: string | null }
 }): Promise<void> {
   const siteDone = await prisma.$transaction(async (tx) => {
     const row = await lockSiteIn(tx, input.analysisSiteId)
@@ -208,6 +210,7 @@ export async function onPdfAnalyzed(input: {
         sizeBytes: input.sizeBytes ?? undefined,
         httpStatus: input.httpStatus ?? undefined,
         contentType: input.contentType ?? undefined,
+        ...(input.a11y ?? {}),
         analyzedAt: new Date(),
       },
     })

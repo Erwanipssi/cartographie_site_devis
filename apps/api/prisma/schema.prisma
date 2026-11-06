@@ -147,6 +147,11 @@ model PdfDocument {
   pagesWithText    Int?
   pagesWithoutText Int?
   ocrStatus        OcrStatus    @default(pending)
+  /// Accessibilité (null tant que le PDF n’a pas été contrôlé) : voir lib/pdf-accessibility.ts
+  tagged           Boolean?
+  title            String?
+  titleStatus      String?
+  lang             String?
   errorMessage     String?
   analyzedAt       DateTime?
 

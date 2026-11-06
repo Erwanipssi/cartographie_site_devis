@@ -147,10 +147,19 @@ describe.skipIf(!reachable)('cycle de vie d’une analyse (base réelle)', () =>
         sizeBytes: 1000,
         httpStatus: 200,
         contentType: 'application/pdf',
+        a11y:
+          index === 0
+            ? { tagged: true, title: 'Rapport annuel', titleStatus: 'ok', lang: 'fr-FR' }
+            : { tagged: false, title: 'Microsoft Word - scan.docx', titleStatus: 'generic', lang: null },
       })
     }
     row = await prisma.analysisSite.findUniqueOrThrow({ where: { id: analysisSite.id } })
     expect(row).toMatchObject({ status: 'completed', pendingPdfCount: 0, pdfTextCount: 1, pdfImageCount: 1 })
+    const checked = await prisma.pdfDocument.findMany({ where: { analysisSiteId: analysisSite.id }, orderBy: { url: 'asc' } })
+    expect(checked.map((pdf) => [pdf.tagged, pdf.titleStatus, pdf.lang])).toEqual([
+      [true, 'ok', 'fr-FR'],
+      [false, 'generic', null],
+    ])
     const done = await prisma.analysis.findUniqueOrThrow({ where: { id: analysis.id } })
     expect(done.status).toBe('completed')
   })

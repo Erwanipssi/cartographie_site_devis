@@ -8,11 +8,21 @@ export type PdfInspection = {
   pagesWithText: number
   pagesWithoutText: number
   errorMessage: string | null
+  /** Accessibilité (RGAA, documents bureautiques) : structure balisée, titre et langue déclarés. */
+  tagged: boolean
+  title: string | null
+  lang: string | null
 }
 
 type TextItem = { str?: string }
+type StructNode = { children?: unknown[] } | null
 
-async function pageCharCounts(bytes: Uint8Array): Promise<number[]> {
+/** Pages examinées pour détecter le balisage : une couverture purement décorative peut ne porter aucune balise. */
+const TAG_PROBE_PAGES = 3
+
+type DocumentFacts = { charCounts: number[]; tagged: boolean; title: string | null; lang: string | null }
+
+async function inspectDocument(bytes: Uint8Array): Promise<DocumentFacts> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
   const require = createRequire(import.meta.url)
   const workerPath = require.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs')
@@ -25,18 +35,48 @@ async function pageCharCounts(bytes: Uint8Array): Promise<number[]> {
       verbosity: 0,
     })
     .promise
-  const counts: number[] = []
+  const charCounts: number[] = []
+  let tagged = false
   try {
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
       const page = await document.getPage(pageNumber)
       const content = await page.getTextContent()
       const text = content.items.map((item) => ('str' in item ? String((item as TextItem).str ?? '') : '')).join(' ')
-      counts.push(usefulCharCount(text))
+      charCounts.push(usefulCharCount(text))
+      // Un PDF balisé expose un arbre de structure (titres, paragraphes, listes…) que lisent les lecteurs d'écran.
+      if (!tagged && pageNumber <= TAG_PROBE_PAGES) {
+        const tree = (await page.getStructTree().catch(() => null)) as StructNode
+        tagged = Boolean(tree?.children?.length)
+      }
+    }
+    const { info, metadata } = await document.getMetadata().catch(() => ({ info: {}, metadata: null }))
+    const facts = info as { Title?: unknown; Language?: unknown }
+    const xmpTitle = metadata?.get('dc:title')
+    return {
+      charCounts,
+      tagged,
+      title: cleanText(facts.Title) ?? cleanText(xmpTitle),
+      lang: cleanText(facts.Language),
     }
   } finally {
     await document.destroy()
   }
-  return counts
+}
+
+function cleanText(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const text = repairMojibake(value).replace(/\s+/g, ' ').trim()
+  return text ? text.slice(0, 300) : null
+}
+
+/**
+ * Certains logiciels écrivent les métadonnées en UTF-8 là où le PDF attend du Latin-1 : « février » devient
+ * « fÃ©vrier ». On ne corrige que ce motif reconnaissable, et seulement si le décodage UTF-8 est propre.
+ */
+export function repairMojibake(text: string): string {
+  if (!/[ÃÂ][\u0080-¿]/.test(text) || /[^\u0000-ÿ]/.test(text)) return text
+  const repaired = Buffer.from(text, 'latin1').toString('utf8')
+  return repaired.includes('�') ? text : repaired
 }
 
 export function pdfFailureMessage(error: unknown): string {
@@ -52,7 +92,8 @@ export async function analyzePdfBuffer(
   options: { minChars: number; textRatio: number; imageRatio: number },
 ): Promise<PdfInspection> {
   // pdf.js peut s'approprier le tampon reçu : on lui passe une copie, sans aller-retour disque.
-  const charCounts = await pageCharCounts(new Uint8Array(bytes))
+  const facts = await inspectDocument(new Uint8Array(bytes))
+  const { charCounts } = facts
   const ocrStatus = classifyOcr(charCounts, options)
   const pagesWithText = charCounts.filter((count) => count >= options.minChars).length
   return {
@@ -61,5 +102,8 @@ export async function analyzePdfBuffer(
     pagesWithText,
     pagesWithoutText: Math.max(0, charCounts.length - pagesWithText),
     errorMessage: ocrStatus === 'error' ? 'PDF sans page lisible' : null,
+    tagged: facts.tagged,
+    title: facts.title,
+    lang: facts.lang,
   }
 }
