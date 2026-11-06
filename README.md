@@ -93,11 +93,19 @@ Le worker est indispensable. Sans lui, l’accueil indique qu’il est arrêté 
 
 L’envoi de mail exige un SMTP dans `apps/api/.env` (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`). Sans cela, le bouton d’envoi explique que le serveur n’est pas configuré.
 
-## Tests
+## Qualité du code
 
 ```powershell
+corepack pnpm lint
+corepack pnpm typecheck
 corepack pnpm test
 ```
+
+L’intégration continue (GitHub Actions, `.github/workflows/ci.yml`) lance à chaque push et pull request le lint, le typage, la construction de l’interface et tous les tests, avec un PostgreSQL et un Redis de test.
+
+Sur un poste à court de mémoire, `npx vitest run --no-file-parallelism` (dans `apps/api`) exécute les tests un fichier à la fois.
+
+## Tests
 
 Les tests couvrent la normalisation d’URL, le refus des adresses privées, la classification du contenu, la lecture des sitemaps, l’extraction de liens, le crawl en mémoire (domaine, profondeur, plafond de pages, mode sitemap, robots.txt et Crawl-delay), la liste des PDF à traiter et la structure du classeur Excel.
 

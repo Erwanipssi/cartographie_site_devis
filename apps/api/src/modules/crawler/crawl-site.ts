@@ -1,12 +1,11 @@
-import robotsParser from 'robots-parser'
 import type { CrawlConfig } from '@cartographie/shared'
 import { classifyContentType, looksLikePdf } from '../../lib/classify'
 import { extractLinks } from '../../lib/links'
-import { parseSitemapLocs } from '../../lib/sitemap'
 import { isInScope, normalizeUrl } from '../../lib/url'
-import type { CrawlInput, CrawlStats, DiscoveredError, SitemapSource } from './types'
-
-const MAX_CRAWL_DELAY_MS = 30_000
+import { createPacer, createTextReader, decodeBody } from './fetch-text'
+import { loadRobots, type RobotsRules } from './robots'
+import { readSitemaps, sitemapFailureMessage } from './sitemap-reader'
+import type { CrawlInput, CrawlStats, DiscoveredError } from './types'
 
 type QueueItem = {
   url: string
@@ -18,139 +17,46 @@ type QueueItem = {
   guessPdf: boolean
 }
 
-function decodeBody(body: Uint8Array, contentType: string | null): string {
-  const match = /charset=([^;]+)/i.exec(contentType ?? '')
-  const charset = match?.[1]?.trim().replace(/["']/g, '') || 'utf-8'
-  try {
-    return new TextDecoder(charset).decode(body)
-  } catch {
-    return new TextDecoder().decode(body)
-  }
-}
-
+/**
+ * Analyse d'un site : robots.txt, sitemap, puis file de pages et de PDF.
+ * - mode « sitemap » : pages du sitemap, et seulement les liens PDF trouvés dessus ;
+ * - mode « crawl », ou sitemap introuvable : tous les liens du site jusqu'à la profondeur réglée.
+ */
 export async function crawlSite(input: CrawlInput): Promise<CrawlStats> {
   const seed = normalizeUrl(input.seedUrl)
   if (!seed) throw new Error('URL de départ invalide')
   const seedUrl = new URL(seed)
   const seedHost = seedUrl.hostname
-  const origin = seedUrl.origin
   const config: CrawlConfig = input.config
   const shouldCancel = input.shouldCancel ?? (async () => false)
+  const inScope = (hostname: string) => isInScope(hostname, seedHost, input.includeSubdomains)
 
-  // Délai entre deux requêtes : celui des réglages, relevé si robots.txt demande un Crawl-delay plus long.
-  let delayMs = config.delayMs
-  let slot = Promise.resolve()
-  const pace = async () => {
-    if (delayMs <= 0) return
-    const wait = slot.then(() => sleep(delayMs))
-    slot = wait.catch(() => undefined)
-    await wait
-  }
-
-  // Certains CMS (TYPO3 notamment) renvoient par intermittence une erreur 500 sur sitemap.xml :
-  // on retente les erreurs serveur et réseau, avec une attente croissante, avant d'abandonner.
-  const retryDelayMs = input.retryDelayMs ?? 1500
+  const pacer = createPacer(config.delayMs)
+  const readText = createTextReader(input.fetch, pacer.pace, input.retryDelayMs ?? 1500)
   const sitemapMode = config.mode === 'sitemap'
   const sitemapAttempts = sitemapMode ? 6 : 3
-  type ReadResult = { text: string | null; status: number | null; message: string | null }
-  const readText = async (url: string, attempts = 1): Promise<ReadResult> => {
-    let last: ReadResult = { text: null, status: null, message: null }
-    for (let attempt = 1; attempt <= attempts; attempt += 1) {
-      await pace()
-      const result = await input.fetch(url)
-      if (result.ok && result.status < 400) {
-        return { text: result.body.byteLength === 0 ? null : decodeBody(result.body, result.contentType), status: result.status, message: null }
-      }
-      last = result.ok ? { text: null, status: result.status, message: `HTTP ${result.status}` } : { text: null, status: result.status ?? null, message: result.message }
-      const retryable = !result.ok ? result.errorType === 'network' || result.errorType === 'timeout' : result.status >= 500
-      if (!retryable || attempt === attempts) return last
-      await sleep(Math.min(retryDelayMs * 2 ** (attempt - 1), 20_000))
-    }
-    return last
-  }
 
-  let isAllowed = (_url: string) => true
-  const sitemapSeeds: string[] = [`${origin}/sitemap.xml`]
+  let robots: RobotsRules = { isAllowed: () => true, sitemaps: [], crawlDelayMs: null }
   if (config.respectRobots) {
-    const robotsBody = (await readText(`${origin}/robots.txt`)).text
-    if (robotsBody) {
-      const robots = robotsParser(`${origin}/robots.txt`, robotsBody)
-      isAllowed = (url) => robots.isAllowed(url, input.userAgent) !== false
-      sitemapSeeds.unshift(...robots.getSitemaps())
-      // Crawl-delay est en secondes ; plafonné à 30 s pour qu'une valeur aberrante ne fige pas l'analyse.
-      const crawlDelay = robots.getCrawlDelay(input.userAgent)
-      if (crawlDelay && Number.isFinite(crawlDelay) && crawlDelay > 0) {
-        delayMs = Math.max(delayMs, Math.min(Math.round(crawlDelay * 1000), MAX_CRAWL_DELAY_MS))
-      }
-    }
+    robots = await loadRobots(readText, seedUrl.origin, input.userAgent)
+    if (robots.crawlDelayMs) pacer.raiseDelay(robots.crawlDelayMs)
   }
 
-  const seenSitemaps = new Set<string>()
-  const discovered: string[] = []
-  // Sitemaps qui n'ont jamais répondu : le sitemap obtenu est alors incomplet, on le signale.
-  const failedSitemaps: Array<{ url: string; status: number | null; message: string }> = []
-  const walkSitemap = async (rawUrl: string, depth = 0): Promise<void> => {
-    const url = normalizeUrl(rawUrl)
-    if (!url || seenSitemaps.has(url) || depth > 4 || seenSitemaps.size >= 50) return
-    if (!isInScope(new URL(url).hostname, seedHost, input.includeSubdomains)) return
-    seenSitemaps.add(url)
-    const read = await readText(url, sitemapAttempts)
-    const xml = read.text
-    if (!xml) {
-      // Le sitemap.xml racine absent (404) est courant : seule une erreur serveur ou un sous-sitemap manquant compte.
-      if (depth > 0 || (read.status ?? 500) >= 500) failedSitemaps.push({ url, status: read.status, message: read.message ?? 'Réponse vide' })
-      return
-    }
-    const parsed = parseSitemapLocs(xml)
-    if (parsed.index) {
-      // Sous-sitemaps lus 4 par 4 : un sous-sitemap en panne (et ses nouvelles tentatives) ne bloque pas les autres.
-      const children = [...parsed.locs]
-      const worker = async () => {
-        for (let loc = children.shift(); loc !== undefined; loc = children.shift()) {
-          if (discovered.length >= config.maxPages + config.maxPdfs) return
-          await walkSitemap(loc, depth + 1)
-        }
-      }
-      await Promise.all(Array.from({ length: Math.min(4, children.length) }, worker))
-      return
-    }
-    for (const loc of parsed.locs) {
-      discovered.push(loc)
-      if (discovered.length >= config.maxPages + config.maxPdfs) return
-    }
-  }
-  for (const sitemapUrl of sitemapSeeds) await walkSitemap(sitemapUrl)
-
-  // Lecture complète : on la mémorise. Lecture ratée ou partielle : on complète avec la dernière version connue.
-  const liveCount = discovered.length
-  const liveComplete = liveCount > 0 && failedSitemaps.length === 0
-  const known = input.knownSitemap && input.knownSitemap.urls.length > 0 ? input.knownSitemap : null
-  const usedKnownSitemap = !liveComplete && known !== null
-  if (liveComplete) {
-    try {
-      await input.onSitemapRead?.([...new Set(discovered)])
-    } catch {
-      /* mémorisation facultative */
-    }
-  } else if (known) {
-    const present = new Set(discovered)
-    for (const loc of known.urls) if (!present.has(loc)) discovered.push(loc)
-  }
-  const sitemapUrlCount = new Set(discovered.map((loc) => normalizeUrl(loc) ?? loc)).size
+  const sitemap = await readSitemaps({
+    seeds: [...robots.sitemaps, `${seedUrl.origin}/sitemap.xml`],
+    readText,
+    attempts: sitemapAttempts,
+    inScope,
+    limit: config.maxPages + config.maxPdfs,
+    known: input.knownSitemap,
+    onComplete: input.onSitemapRead,
+  })
   // Mode sitemap sans sitemap exploitable : on retombe sur le crawl complet plutôt que de ne rien trouver.
-  const followLinks = !sitemapMode || sitemapUrlCount === 0
+  const followLinks = !sitemapMode || sitemap.count === 0
   // Crawl de secours du mode sitemap : la profondeur réglée (inutile en mode sitemap) ne doit pas brider le parcours.
   const maxDepth = sitemapMode ? 8 : config.maxDepth
-  // D'où vient la liste d'URL : affiché à côté du compteur pour juger de sa fiabilité.
-  const sitemapSource: SitemapSource = liveComplete
-    ? 'live'
-    : liveCount > 0
-      ? 'partial'
-      : usedKnownSitemap
-        ? 'cache'
-        : 'none'
   try {
-    await input.onSitemap?.(sitemapUrlCount, sitemapSource)
+    await input.onSitemap?.(sitemap.count, sitemap.source)
   } catch {
     /* compteur indicatif */
   }
@@ -165,6 +71,7 @@ export async function crawlSite(input: CrawlInput): Promise<CrawlStats> {
   let otherCount = 0
   let errorCount = 0
   let stopped = false
+  const allowed = (item: { url: string; rawUrl: string }) => !config.respectRobots || (robots.isAllowed(item.rawUrl) && robots.isAllowed(item.url))
 
   // Un échec d'enregistrement (base saturée, etc.) ne doit jamais faire tomber le crawl.
   const reportError = async (error: DiscoveredError) => {
@@ -179,19 +86,19 @@ export async function crawlSite(input: CrawlInput): Promise<CrawlStats> {
   const enqueue = (raw: string, depth: number, parentUrl: string | null, fromSitemap: boolean) => {
     const url = normalizeUrl(raw)
     if (!url || seen.has(url)) return
-    let host = ''
+    let host: string
     try {
       host = new URL(url).hostname
     } catch {
       return
     }
-    if (!isInScope(host, seedHost, input.includeSubdomains)) return
+    if (!inScope(host)) return
     // Mode sitemap : on ne suit que les liens vers des PDF, pas les autres pages.
     if (!followLinks && !fromSitemap && !looksLikePdf(url)) return
     if (followLinks && !fromSitemap && depth > maxDepth) return
     const rawUrl = raw.split('#')[0] ?? raw
     // Filtré ici pour ne pas consommer le quota de pages avec des URL interdites (pagination, impression…).
-    if (config.respectRobots && url !== seed && (!isAllowed(rawUrl) || !isAllowed(url))) return
+    if (url !== seed && !allowed({ url, rawUrl })) return
     const guessPdf = looksLikePdf(url)
     if (guessPdf) {
       if (pdfCount + queuedPdf >= config.maxPdfs) return
@@ -208,23 +115,17 @@ export async function crawlSite(input: CrawlInput): Promise<CrawlStats> {
     else queue.push(item)
   }
 
-  for (const failed of failedSitemaps) {
+  for (const failed of sitemap.failed) {
     await reportError({
       url: failed.url,
       errorType: 'sitemap',
-      message: `Sitemap illisible après ${sitemapAttempts} essais (${failed.message})${
-        usedKnownSitemap && known
-          ? ` : dernière version lue le ${known.readAt.toLocaleDateString('fr-FR')} à ${known.readAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} utilisée (${known.urls.length} URL)`
-          : followLinks && sitemapMode
-            ? ' : crawl complet utilisé'
-            : ''
-      }`,
+      message: sitemapFailureMessage(failed, sitemapAttempts, sitemap.usedKnown, followLinks && sitemapMode),
       httpStatus: failed.status,
     })
   }
   // En mode sitemap, la page d'accueil n'est analysée que si le sitemap la liste : le décompte colle au sitemap.
   if (followLinks) enqueue(seed, 0, null, false)
-  for (const loc of discovered) enqueue(loc, 0, null, true)
+  for (const loc of sitemap.urls) enqueue(loc, 0, null, true)
 
   const handle = async (item: QueueItem) => {
     if (item.guessPdf) queuedPdf = Math.max(0, queuedPdf - 1)
@@ -236,7 +137,7 @@ export async function crawlSite(input: CrawlInput): Promise<CrawlStats> {
       }
       if (done.has(item.url)) return
       done.add(item.url)
-      if (config.respectRobots && (!isAllowed(item.rawUrl) || !isAllowed(item.url))) {
+      if (!allowed(item)) {
         if (item.url === seed) {
           stopped = true
           await reportError({
@@ -258,7 +159,7 @@ export async function crawlSite(input: CrawlInput): Promise<CrawlStats> {
         return
       }
 
-      await pace()
+      await pacer.pace()
       const result = await input.fetch(item.url)
       if (!result.ok) {
         await reportError({
@@ -280,8 +181,7 @@ export async function crawlSite(input: CrawlInput): Promise<CrawlStats> {
       }
 
       const finalUrl = normalizeUrl(result.finalUrl) ?? result.finalUrl
-      const finalHost = new URL(finalUrl).hostname
-      if (!isInScope(finalHost, seedHost, input.includeSubdomains)) {
+      if (!inScope(new URL(finalUrl).hostname)) {
         await reportError({
           url: finalUrl,
           errorType: 'redirect_out_of_scope',
@@ -350,9 +250,14 @@ export async function crawlSite(input: CrawlInput): Promise<CrawlStats> {
     pump()
   })
 
-  return { htmlCount, pdfCount, otherCount, errorCount, sitemapUrlCount, sitemapSource, usedSitemap: !followLinks, usedKnownSitemap }
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+  return {
+    htmlCount,
+    pdfCount,
+    otherCount,
+    errorCount,
+    sitemapUrlCount: sitemap.count,
+    sitemapSource: sitemap.source,
+    usedSitemap: !followLinks,
+    usedKnownSitemap: sitemap.usedKnown !== null,
+  }
 }

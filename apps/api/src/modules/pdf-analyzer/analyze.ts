@@ -74,9 +74,27 @@ function cleanText(value: unknown): string | null {
  * « fÃ©vrier ». On ne corrige que ce motif reconnaissable, et seulement si le décodage UTF-8 est propre.
  */
 export function repairMojibake(text: string): string {
-  if (!/[ÃÂ][\u0080-¿]/.test(text) || /[^\u0000-ÿ]/.test(text)) return text
+  if (!looksLikeMojibake(text) || hasCharAbove(text, 0xff)) return text
   const repaired = Buffer.from(text, 'latin1').toString('utf8')
-  return repaired.includes('�') ? text : repaired
+  return repaired.includes(REPLACEMENT_CHAR) ? text : repaired
+}
+
+/** Caractère de remplacement Unicode : signe d'un décodage UTF-8 raté. */
+const REPLACEMENT_CHAR = String.fromCharCode(0xfffd)
+
+/** « Ã » ou « Â » (0xC3, 0xC2) suivi d'un octet de continuation UTF-8 (0x80-0xBF) lu comme Latin-1. */
+function looksLikeMojibake(text: string): boolean {
+  for (let index = 0; index < text.length - 1; index += 1) {
+    const lead = text.charCodeAt(index)
+    const next = text.charCodeAt(index + 1)
+    if ((lead === 0xc3 || lead === 0xc2) && next >= 0x80 && next <= 0xbf) return true
+  }
+  return false
+}
+
+function hasCharAbove(text: string, max: number): boolean {
+  for (let index = 0; index < text.length; index += 1) if (text.charCodeAt(index) > max) return true
+  return false
 }
 
 export function pdfFailureMessage(error: unknown): string {

@@ -17,12 +17,18 @@
     "dev:web": "corepack pnpm --filter @cartographie/web dev",
     "test": "corepack pnpm --filter @cartographie/api test",
     "typecheck": "corepack pnpm -r --if-present typecheck",
+    "lint": "eslint .",
     "db:generate": "corepack pnpm --filter @cartographie/api db:generate",
     "db:migrate": "corepack pnpm --filter @cartographie/api db:migrate",
     "db:deploy": "corepack pnpm --filter @cartographie/api db:deploy"
   },
   "devDependencies": {
+    "@eslint/js": "10.0.1",
     "concurrently": "^9.2.1",
-    "typescript": "^5.9.2"
+    "eslint": "10.13.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.13.0",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "8.72.0"
   }
 }

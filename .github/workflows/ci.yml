@@ -1,0 +1,79 @@
+# Intégration continue : à chaque push sur main et à chaque pull request.
+# Lint, typage, construction de l'interface, tests (unitaires et d'intégration sur un vrai PostgreSQL et Redis).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verifier:
+    name: Lint, typage, build et tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: cartographie
+          POSTGRES_PASSWORD: cartographie
+          POSTGRES_DB: cartographie
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cartographie -d cartographie"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+
+    env:
+      # Pas de fichier apps/api/.env en CI : la configuration passe par l'environnement.
+      DATABASE_URL: postgresql://cartographie:cartographie@localhost:5432/cartographie
+      REDIS_URL: redis://localhost:6379
+      LOG_LEVEL: warn
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Activer pnpm (version fixée par packageManager)
+        run: corepack enable
+
+      - name: Installer les dépendances
+        run: pnpm install --frozen-lockfile
+
+      - name: Générer le client Prisma
+        run: pnpm --filter @cartographie/api exec prisma generate
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typage
+        run: pnpm typecheck
+
+      - name: Construire l'interface
+        run: pnpm --filter @cartographie/web build
+
+      - name: Tests (dont intégration sur PostgreSQL et Redis)
+        run: pnpm test

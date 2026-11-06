@@ -1,4 +1,3 @@
-import { crawlConfigSchema } from '@cartographie/shared'
 import { Worker } from 'bullmq'
 import { env } from './env'
 import { isCancelled } from './lib/cancel'
