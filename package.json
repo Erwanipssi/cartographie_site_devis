@@ -8,6 +8,7 @@
     "node": ">=22"
   },
   "scripts": {
+    "start": "node scripts/dev.mjs",
     "infra": "docker compose up -d",
     "infra:down": "docker compose down",
     "dev": "concurrently -n api,worker,web -c blue,magenta,green \"corepack pnpm run dev:api\" \"corepack pnpm run dev:worker\" \"corepack pnpm run dev:web\"",

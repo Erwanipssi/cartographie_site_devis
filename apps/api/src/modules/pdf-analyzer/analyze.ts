@@ -1,6 +1,3 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
 import { classifyOcr, usefulCharCount } from '../../lib/ocr'
@@ -54,22 +51,15 @@ export async function analyzePdfBuffer(
   bytes: Uint8Array,
   options: { minChars: number; textRatio: number; imageRatio: number },
 ): Promise<PdfInspection> {
-  const dir = await mkdtemp(join(tmpdir(), 'cartographie-'))
-  try {
-    const file = join(dir, 'document.pdf')
-    await writeFile(file, bytes)
-    const stored = new Uint8Array(await readFile(file))
-    const charCounts = await pageCharCounts(stored)
-    const ocrStatus = classifyOcr(charCounts, options)
-    const pagesWithText = charCounts.filter((count) => count >= options.minChars).length
-    return {
-      ocrStatus,
-      pageCount: charCounts.length,
-      pagesWithText,
-      pagesWithoutText: Math.max(0, charCounts.length - pagesWithText),
-      errorMessage: ocrStatus === 'error' ? 'PDF sans page lisible' : null,
-    }
-  } finally {
-    await rm(dir, { recursive: true, force: true })
+  // pdf.js peut s'approprier le tampon reçu : on lui passe une copie, sans aller-retour disque.
+  const charCounts = await pageCharCounts(new Uint8Array(bytes))
+  const ocrStatus = classifyOcr(charCounts, options)
+  const pagesWithText = charCounts.filter((count) => count >= options.minChars).length
+  return {
+    ocrStatus,
+    pageCount: charCounts.length,
+    pagesWithText,
+    pagesWithoutText: Math.max(0, charCounts.length - pagesWithText),
+    errorMessage: ocrStatus === 'error' ? 'PDF sans page lisible' : null,
   }
 }

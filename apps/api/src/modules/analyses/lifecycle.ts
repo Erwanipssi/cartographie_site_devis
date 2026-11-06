@@ -24,9 +24,6 @@ const counterByStatus = {
 
 const lastPublish = new Map<string, number>()
 
-function isUnique(error: unknown): boolean {
-  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002'
-}
 
 function asDate(value: Date | string | null): Date | null {
   if (!value) return null
@@ -61,9 +58,11 @@ export async function publishSite(analysisId: string, analysisSiteId: string, ty
 }
 
 export async function recordPage(analysisId: string, analysisSiteId: string, page: DiscoveredPage): Promise<void> {
-  try {
-    await prisma.page.create({
-      data: {
+  // skipDuplicates : une page déjà vue (reprise après redémarrage, redirections) est ignorée par la base
+  // sans lever d'erreur — fini les « prisma:error Unique constraint » dans les journaux.
+  const { count } = await prisma.page.createMany({
+    data: [
+      {
         analysisSiteId,
         url: page.url,
         httpStatus: page.httpStatus,
@@ -72,11 +71,10 @@ export async function recordPage(analysisId: string, analysisSiteId: string, pag
         contentType: page.contentType,
         sizeBytes: page.sizeBytes,
       },
-    })
-  } catch (error) {
-    if (isUnique(error)) return
-    throw error
-  }
+    ],
+    skipDuplicates: true,
+  })
+  if (count === 0) return
   await prisma.analysisSite.update({ where: { id: analysisSiteId }, data: { htmlCount: { increment: 1 } } })
   await publishSite(analysisId, analysisSiteId, 'site.progress')
 }
@@ -106,10 +104,9 @@ export async function recordError(analysisId: string, analysisSiteId: string, er
 }
 
 export async function recordPdf(analysisId: string, analysisSiteId: string, page: DiscoveredPage): Promise<void> {
-  let pdfId: string
-  try {
-    const pdf = await prisma.pdfDocument.create({
-      data: {
+  const { count } = await prisma.pdfDocument.createMany({
+    data: [
+      {
         analysisSiteId,
         url: page.url,
         httpStatus: page.httpStatus,
@@ -119,12 +116,16 @@ export async function recordPdf(analysisId: string, analysisSiteId: string, page
         sizeBytes: page.sizeBytes,
         ocrStatus: 'pending',
       },
-    })
-    pdfId = pdf.id
-  } catch (error) {
-    if (isUnique(error)) return
-    throw error
-  }
+    ],
+    skipDuplicates: true,
+  })
+  if (count === 0) return
+  const created = await prisma.pdfDocument.findUnique({
+    where: { analysisSiteId_url: { analysisSiteId, url: page.url } },
+    select: { id: true },
+  })
+  if (!created) return
+  const pdfId = created.id
   await prisma.analysisSite.update({
     where: { id: analysisSiteId },
     data: { pdfCount: { increment: 1 }, pendingPdfCount: { increment: 1 } },
@@ -133,7 +134,7 @@ export async function recordPdf(analysisId: string, analysisSiteId: string, page
     await pdfQueue.add(
       'analyze-pdf',
       { analysisId, analysisSiteId, pdfId },
-      { jobId: pdfId, attempts: 2, backoff: { type: 'exponential', delay: 3000 }, removeOnComplete: 1000, removeOnFail: 1000 },
+      { jobId: pdfId, attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: 1000, removeOnFail: 1000 },
     )
   } catch (error) {
     logger.error({ err: error, pdfId }, 'enqueue PDF impossible')
@@ -186,6 +187,9 @@ export async function onPdfAnalyzed(input: {
   pagesWithText: number | null
   pagesWithoutText: number | null
   sizeBytes: number | null
+  /** Code HTTP et type relevés au téléchargement (absents quand le crawler les a déjà). */
+  httpStatus?: number | null
+  contentType?: string | null
 }): Promise<void> {
   const siteDone = await prisma.$transaction(async (tx) => {
     const row = await lockSiteIn(tx, input.analysisSiteId)
@@ -201,6 +205,8 @@ export async function onPdfAnalyzed(input: {
         pagesWithText: input.pagesWithText,
         pagesWithoutText: input.pagesWithoutText,
         sizeBytes: input.sizeBytes ?? undefined,
+        httpStatus: input.httpStatus ?? undefined,
+        contentType: input.contentType ?? undefined,
         analyzedAt: new Date(),
       },
     })

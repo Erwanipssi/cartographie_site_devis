@@ -15,6 +15,8 @@ import { executeSchedule } from './modules/scheduler/run'
 import { syncAllSchedules } from './modules/scheduler/sync'
 import { readConfig } from './modules/analyses/service'
 
+const PDF_MIN_TIMEOUT_MS = 60_000
+
 function readKnownSitemap(urls: unknown, readAt: Date | null): { urls: string[]; readAt: Date } | undefined {
   if (!readAt || !Array.isArray(urls)) return undefined
   const list = urls.filter((url): url is string => typeof url === 'string')
@@ -67,6 +69,7 @@ async function main(): Promise<void> {
           onOther: async () => recordOther(analysisId, analysisSiteId),
           onError: async (error) => recordError(analysisId, analysisSiteId, error),
           onSitemap: async (count) => recordSitemap(analysisId, analysisSiteId, count),
+          deferPdfFetch: true,
           knownSitemap: readKnownSitemap(row.site.sitemapUrls, row.site.sitemapReadAt),
           onSitemapRead: async (urls) => {
             await prisma.site.update({ where: { id: row.site.id }, data: { sitemapUrls: urls, sitemapReadAt: new Date() } })
@@ -101,22 +104,45 @@ async function main(): Promise<void> {
       const config = readConfig(analysis.config)
       const fetched = await fetchPublic(pdf.url, {
         userAgent: env.CARTOGRAPHIE_USER_AGENT,
-        timeoutMs: config.timeoutMs,
+        // Le délai couvre tout le fichier : un PDF de plusieurs Mo sur un site chargé dépasse vite 15 s.
+        timeoutMs: Math.max(config.timeoutMs, PDF_MIN_TIMEOUT_MS),
         maxBytes: Math.min(config.pdfMaxBytes, env.PDF_MAX_BYTES),
         skipPdfBody: false,
       })
-      if (!fetched.ok) {
-        await onPdfAnalyzed({
+      // Échec passager (délai, réseau, erreur serveur) : on laisse BullMQ retenter, avec attente croissante.
+      // Le dernier essai, lui, enregistre l'échec pour que le site puisse se terminer.
+      const transient = fetched.ok ? fetched.status >= 500 : fetched.errorType === 'timeout' || fetched.errorType === 'network'
+      if (transient && job.attemptsMade + 1 < (job.opts.attempts ?? 1)) {
+        throw new Error(`Téléchargement PDF à retenter : ${fetched.ok ? `HTTP ${fetched.status}` : fetched.message}`)
+      }
+      const fail = (errorMessage: string, extra: { httpStatus?: number | null; contentType?: string | null; sizeBytes?: number | null } = {}) =>
+        onPdfAnalyzed({
           analysisId,
           analysisSiteId,
           pdfId,
           ocrStatus: 'error',
-          errorMessage: fetched.message,
+          errorMessage,
           pageCount: null,
           pagesWithText: null,
           pagesWithoutText: null,
-          sizeBytes: pdf.sizeBytes,
+          sizeBytes: extra.sizeBytes ?? pdf.sizeBytes,
+          httpStatus: extra.httpStatus,
+          contentType: extra.contentType,
         })
+      if (!fetched.ok) {
+        await fail(fetched.message, { httpStatus: fetched.status ?? null })
+        return
+      }
+      // Le crawler n'a pas demandé le fichier (mode « téléchargement unique ») : c'est ici qu'on relève
+      // une page d'erreur ou une page HTML servie à la place du PDF.
+      if (fetched.status >= 400) {
+        await fail(`HTTP ${fetched.status}`, { httpStatus: fetched.status, contentType: fetched.contentType })
+        return
+      }
+      const mime = fetched.contentType?.split(';')[0]?.trim().toLowerCase() ?? ''
+      const looksPdf = new TextDecoder().decode(fetched.body.subarray(0, 5)) === '%PDF-'
+      if (!looksPdf && (mime === 'text/html' || mime === 'application/xhtml+xml')) {
+        await fail(`Pas un PDF (${mime})`, { httpStatus: fetched.status, contentType: fetched.contentType, sizeBytes: fetched.sizeBytes })
         return
       }
       try {
@@ -135,19 +161,11 @@ async function main(): Promise<void> {
           pagesWithText: inspection.pagesWithText,
           pagesWithoutText: inspection.pagesWithoutText,
           sizeBytes: fetched.sizeBytes,
+          httpStatus: fetched.status,
+          contentType: fetched.contentType,
         })
       } catch (error) {
-        await onPdfAnalyzed({
-          analysisId,
-          analysisSiteId,
-          pdfId,
-          ocrStatus: 'error',
-          errorMessage: pdfFailureMessage(error),
-          pageCount: null,
-          pagesWithText: null,
-          pagesWithoutText: null,
-          sizeBytes: fetched.sizeBytes,
-        })
+        await fail(pdfFailureMessage(error), { httpStatus: fetched.status, contentType: fetched.contentType, sizeBytes: fetched.sizeBytes })
       }
     },
     { connection: bullConnection, concurrency: env.PDF_CONCURRENCY },
@@ -187,6 +205,14 @@ async function main(): Promise<void> {
   // Une promesse oubliée ne doit pas arrêter le worker en plein crawl.
   process.on('unhandledRejection', (reason) => {
     logger.error({ err: reason }, 'promesse rejetée non gérée')
+  })
+  // Une vraie exception non rattrapée laisse le processus dans un état incertain : on la journalise puis on sort.
+  process.on('uncaughtException', (error) => {
+    logger.fatal({ err: error }, 'exception non rattrapée : arrêt du worker')
+    process.exit(1)
+  })
+  process.on('exit', (code) => {
+    if (code !== 0) logger.warn({ code }, 'worker arrêté')
   })
   process.on('SIGINT', () => void shutdown())
   process.on('SIGTERM', () => void shutdown())

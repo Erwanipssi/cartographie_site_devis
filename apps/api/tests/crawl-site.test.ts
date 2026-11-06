@@ -353,4 +353,32 @@ describe('crawlSite', () => {
     })
     expect(saved).toEqual(['https://example.com/a'])
   })
+
+  it('enregistre les liens .pdf sans les télécharger quand deferPdfFetch est actif', async () => {
+    const fetched: string[] = []
+    const pdfs: Array<{ url: string; httpStatus: number | null; parentUrl: string | null }> = []
+    const base = memoryFetcher({
+      'https://example.com/sitemap.xml': { contentType: 'application/xml', body: '<urlset><url><loc>https://example.com/a</loc></url></urlset>' },
+      'https://example.com/a': { contentType: 'text/html', body: '<a href="/docs/rapport.pdf">pdf</a>' },
+    })
+    const stats = await crawlSite({
+      seedUrl: 'https://example.com/',
+      includeSubdomains: false,
+      userAgent: 'CartographieTest',
+      retryDelayMs: 0,
+      deferPdfFetch: true,
+      config: crawlConfigSchema.parse({ mode: 'sitemap', maxPages: 50, concurrency: 1, delayMs: 0, respectRobots: false }),
+      fetch: async (url) => {
+        fetched.push(url)
+        return base(url)
+      },
+      onPage: async () => undefined,
+      onPdf: async (pdf) => void pdfs.push({ url: pdf.url, httpStatus: pdf.httpStatus, parentUrl: pdf.parentUrl }),
+      onOther: async () => undefined,
+      onError: async () => undefined,
+    })
+    expect(pdfs).toEqual([{ url: 'https://example.com/docs/rapport.pdf', httpStatus: null, parentUrl: 'https://example.com/a' }])
+    expect(fetched.some((url) => url.endsWith('.pdf'))).toBe(false)
+    expect(stats.pdfCount).toBe(1)
+  })
 })

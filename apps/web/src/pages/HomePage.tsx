@@ -14,12 +14,12 @@ const SCOPES = {
   sitemap: {
     label: 'Sitemap',
     hint: 'Pages du sitemap et PDF qu’elles contiennent',
-    values: { mode: 'sitemap', maxDepth: 8, maxPages: 5000, maxPdfs: 2000, delayMs: 100 },
+    values: { mode: 'sitemap', maxDepth: 8, maxPages: 5000, maxPdfs: 2000, delayMs: 100, concurrency: 6 },
   },
   crawl: {
     label: 'Crawl complet',
     hint: 'Suit tous les liens du site (plus lent)',
-    values: { mode: 'crawl', maxDepth: 8, maxPages: 5000, maxPdfs: 2000, delayMs: 200 },
+    values: { mode: 'crawl', maxDepth: 8, maxPages: 5000, maxPdfs: 2000, delayMs: 200, concurrency: 4 },
   },
 } as const
 type Scope = keyof typeof SCOPES

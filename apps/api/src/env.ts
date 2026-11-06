@@ -17,7 +17,7 @@ const schema = z.object({
   WEB_ORIGIN: z.string().default('http://localhost:5173'),
   CARTOGRAPHIE_USER_AGENT: z.string().default('CartographieBot/0.1 (+local; audit de contenus)'),
   CRAWL_SITE_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(2),
-  PDF_CONCURRENCY: z.coerce.number().int().min(1).max(4).default(2),
+  PDF_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(4),
   PDF_MAX_BYTES: z.coerce.number().int().positive().default(52_428_800),
   EXPORT_DIR: z.string().default('./data/exports'),
   SMTP_HOST: z.string().default(''),

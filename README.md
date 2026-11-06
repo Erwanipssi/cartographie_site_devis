@@ -36,7 +36,34 @@ Au premier `db:migrate`, donnez un nom à la migration si Prisma le demande (`in
 
 ## Lancement
 
-Trois processus : l’API, le worker, l’interface.
+Une seule commande s’occupe de tout : elle vérifie Docker (et lance Docker Desktop sous Windows s’il est arrêté), démarre PostgreSQL et Redis, crée `apps/api/.env` s’il manque, applique les migrations, puis lance l’API, le worker et l’interface.
+
+```powershell
+corepack pnpm start
+```
+
+Les journaux de l’API et du worker sont aussi écrits dans `apps/api/data/logs/` (`api.log`, `worker.log`) : la cause d’un arrêt du worker y reste lisible.
+
+### Migrations bloquées sous Windows (EPERM)
+
+Sur certains postes, une stratégie de sécurité empêche Prisma de lancer son moteur de migration (`spawn EPERM`). Pour appliquer une migration en attente à la main :
+
+```bash
+F=apps/api/prisma/migrations/<dossier>/migration.sql
+docker exec -i cartographie_siteweb-postgres-1 psql -U cartographie -d cartographie -v ON_ERROR_STOP=1 <<SQL
+BEGIN;
+$(cat "$F")
+INSERT INTO "_prisma_migrations" (id, checksum, finished_at, migration_name, started_at, applied_steps_count)
+VALUES (gen_random_uuid()::text, '$(sha256sum "$F" | cut -d' ' -f1)', now(), '<dossier>', now(), 1);
+COMMIT;
+SQL
+```
+
+L’empreinte (`sha256` du fichier) est celle que Prisma vérifie : les fichiers de migration ne doivent pas être modifiés, ni convertis en fin de ligne (voir `.gitattributes`).
+
+### Lancer les processus à la main
+
+Sans le script, avec l’infrastructure déjà démarrée :
 
 ```powershell
 corepack pnpm dev

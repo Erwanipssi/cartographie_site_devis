@@ -21,7 +21,8 @@ export type Fetcher = (url: string) => Promise<PublicFetchResult>
 
 export type DiscoveredPage = {
   url: string
-  httpStatus: number
+  /** null pour un PDF enregistré sans requête : le code HTTP arrive avec l’analyse. */
+  httpStatus: number | null
   depth: number
   parentUrl: string | null
   contentType: string | null
@@ -70,4 +71,6 @@ export type CrawlInput = CrawlHooks & {
   userAgent: string
   /** Attente avant de retenter un sitemap en erreur serveur (ms, multipliée par la tentative). */
   retryDelayMs?: number
+  /** Enregistre les liens .pdf sans les télécharger (le worker PDF s’en charge). */
+  deferPdfFetch?: boolean
 }

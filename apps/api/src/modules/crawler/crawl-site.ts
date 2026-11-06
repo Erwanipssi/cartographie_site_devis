@@ -94,10 +94,15 @@ export async function crawlSite(input: CrawlInput): Promise<CrawlStats> {
     }
     const parsed = parseSitemapLocs(xml)
     if (parsed.index) {
-      for (const loc of parsed.locs) {
-        if (discovered.length >= config.maxPages + config.maxPdfs) return
-        await walkSitemap(loc, depth + 1)
+      // Sous-sitemaps lus 4 par 4 : un sous-sitemap en panne (et ses nouvelles tentatives) ne bloque pas les autres.
+      const children = [...parsed.locs]
+      const worker = async () => {
+        for (let loc = children.shift(); loc !== undefined; loc = children.shift()) {
+          if (discovered.length >= config.maxPages + config.maxPdfs) return
+          await walkSitemap(loc, depth + 1)
+        }
       }
+      await Promise.all(Array.from({ length: Math.min(4, children.length) }, worker))
       return
     }
     for (const loc of parsed.locs) {
@@ -178,7 +183,11 @@ export async function crawlSite(input: CrawlInput): Promise<CrawlStats> {
       queuedHtml += 1
     }
     seen.add(url)
-    queue.push({ url, rawUrl, depth, parentUrl, fromSitemap, guessPdf })
+    const item = { url, rawUrl, depth, parentUrl, fromSitemap, guessPdf }
+    // PDF enregistré sans requête : en tête de file, il part aussitôt à l'analyse, pendant que le crawl
+    // continue, au lieu d'attendre la fin des 1 000+ pages du sitemap.
+    if (guessPdf && input.deferPdfFetch) queue.unshift(item)
+    else queue.push(item)
   }
 
   for (const failed of failedSitemaps) {
@@ -219,6 +228,15 @@ export async function crawlSite(input: CrawlInput): Promise<CrawlStats> {
             httpStatus: null,
           })
         }
+        return
+      }
+
+      // Un lien .pdf est enregistré sans être demandé au site : le worker d'analyse le télécharge
+      // de toute façon, et relève alors le code HTTP. Une requête de moins par PDF.
+      if (item.guessPdf && input.deferPdfFetch) {
+        if (pdfCount >= config.maxPdfs) return
+        pdfCount += 1
+        await input.onPdf({ url: item.url, httpStatus: null, depth: item.depth, parentUrl: item.parentUrl, contentType: null, sizeBytes: null })
         return
       }
 
