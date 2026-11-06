@@ -1,0 +1,2 @@
+# Prisma vérifie une empreinte de chaque migration : aucune conversion de fin de ligne.
+apps/api/prisma/migrations/**/*.sql -text

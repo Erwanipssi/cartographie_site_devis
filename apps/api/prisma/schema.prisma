@@ -1,0 +1,223 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AnalysisStatus {
+  pending
+  running
+  completed
+  failed
+  cancelled
+}
+
+enum AnalysisTrigger {
+  manual
+  scheduled
+}
+
+enum SiteRunStatus {
+  pending
+  crawling
+  analyzing_pdfs
+  completed
+  failed
+  cancelled
+}
+
+enum OcrStatus {
+  pending
+  text
+  image
+  partial
+  error
+}
+
+enum MailStatus {
+  pending
+  sent
+  failed
+}
+
+model Site {
+  id                String         @id @default(cuid())
+  inputUrl          String
+  normalizedUrl     String         @unique
+  origin            String
+  hostname          String
+  includeSubdomains Boolean        @default(false)
+  archivedAt        DateTime?
+  /// Dernières URL lues avec succès dans le sitemap, réutilisées quand le sitemap est en panne.
+  sitemapUrls       Json?
+  sitemapReadAt     DateTime?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  analysisSites     AnalysisSite[]
+  scheduleSites     ScheduleSite[]
+
+  @@index([archivedAt])
+}
+
+model Analysis {
+  id              String          @id @default(cuid())
+  status          AnalysisStatus  @default(pending)
+  trigger         AnalysisTrigger @default(manual)
+  scheduleId      String?
+  schedule        Schedule?       @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  config          Json
+  emailOnComplete Boolean         @default(false)
+  notifyEmails    String[]        @default([])
+  exportPath      String?
+  failureReason   String?
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  createdAt       DateTime        @default(now())
+  sites           AnalysisSite[]
+  deliveries      MailDelivery[]
+
+  @@index([createdAt])
+  @@index([scheduleId])
+}
+
+model AnalysisSite {
+  id              String        @id @default(cuid())
+  analysisId      String
+  siteId          String
+  analysis        Analysis      @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  site            Site          @relation(fields: [siteId], references: [id])
+  status          SiteRunStatus @default(pending)
+  htmlCount       Int           @default(0)
+  pdfCount        Int           @default(0)
+  pdfTextCount    Int           @default(0)
+  pdfImageCount   Int           @default(0)
+  pdfPartialCount Int           @default(0)
+  pdfErrorCount   Int           @default(0)
+  otherCount      Int           @default(0)
+  errorCount      Int           @default(0)
+  pendingPdfCount Int           @default(0)
+  /// URL distinctes lues dans le sitemap du site (null tant que le sitemap n’a pas été lu).
+  sitemapUrlCount Int?
+  discoveryDone   Boolean       @default(false)
+  errorMessage    String?
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  durationMs      Int?
+  pages           Page[]
+  pdfs            PdfDocument[]
+  errors          CrawlError[]
+
+  @@unique([analysisId, siteId])
+  @@index([analysisId, status])
+}
+
+model Page {
+  id             String       @id @default(cuid())
+  analysisSiteId String
+  analysisSite   AnalysisSite @relation(fields: [analysisSiteId], references: [id], onDelete: Cascade)
+  url            String
+  httpStatus     Int?
+  depth          Int
+  parentUrl      String?
+  contentType    String?
+  sizeBytes      Int?
+  createdAt      DateTime     @default(now())
+
+  @@unique([analysisSiteId, url])
+  @@index([analysisSiteId])
+}
+
+model PdfDocument {
+  id               String       @id @default(cuid())
+  analysisSiteId   String
+  analysisSite     AnalysisSite @relation(fields: [analysisSiteId], references: [id], onDelete: Cascade)
+  url              String
+  httpStatus       Int?
+  depth            Int
+  parentUrl        String?
+  contentType      String?
+  sizeBytes        Int?
+  pageCount        Int?
+  pagesWithText    Int?
+  pagesWithoutText Int?
+  ocrStatus        OcrStatus    @default(pending)
+  errorMessage     String?
+  analyzedAt       DateTime?
+
+  @@unique([analysisSiteId, url])
+  @@index([analysisSiteId, ocrStatus])
+}
+
+model CrawlError {
+  id             String       @id @default(cuid())
+  analysisSiteId String
+  analysisSite   AnalysisSite @relation(fields: [analysisSiteId], references: [id], onDelete: Cascade)
+  url            String
+  errorType      String
+  httpStatus     Int?
+  message        String
+  createdAt      DateTime     @default(now())
+
+  @@index([analysisSiteId])
+}
+
+model Recipient {
+  id        String              @id @default(cuid())
+  email     String              @unique
+  label     String?
+  createdAt DateTime            @default(now())
+  schedules ScheduleRecipient[]
+}
+
+model MailDelivery {
+  id         String     @id @default(cuid())
+  analysisId String
+  analysis   Analysis   @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  recipients String[]
+  status     MailStatus @default(pending)
+  error      String?
+  trigger    String
+  sentAt     DateTime?
+  createdAt  DateTime   @default(now())
+
+  @@index([analysisId])
+}
+
+model Schedule {
+  id              String              @id @default(cuid())
+  name            String
+  cron            String
+  timezone        String              @default("Europe/Paris")
+  enabled         Boolean             @default(true)
+  config          Json
+  emailOnComplete Boolean             @default(true)
+  lastRunAt       DateTime?
+  nextRunAt       DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  sites           ScheduleSite[]
+  recipients      ScheduleRecipient[]
+  analyses        Analysis[]
+}
+
+model ScheduleSite {
+  scheduleId String
+  siteId     String
+  schedule   Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  site       Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@id([scheduleId, siteId])
+}
+
+model ScheduleRecipient {
+  scheduleId  String
+  recipientId String
+  schedule    Schedule  @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  recipient   Recipient @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@id([scheduleId, recipientId])
+}

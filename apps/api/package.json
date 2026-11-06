@@ -1,0 +1,45 @@
+{
+  "name": "@cartographie/api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "dev:worker": "tsx watch src/worker.ts",
+    "start": "tsx src/index.ts",
+    "start:worker": "tsx src/worker.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "postinstall": "prisma generate"
+  },
+  "dependencies": {
+    "@cartographie/shared": "workspace:*",
+    "@fastify/cors": "^11.1.0",
+    "@prisma/client": "^6.16.2",
+    "bullmq": "^5.58.5",
+    "cheerio": "^1.1.2",
+    "dotenv": "^17.2.2",
+    "exceljs": "^4.4.0",
+    "fastify": "^5.6.1",
+    "fastify-type-provider-zod": "^4.0.2",
+    "ioredis": "^5.8.0",
+    "nodemailer": "^7.0.6",
+    "pdfjs-dist": "^4.10.38",
+    "pino": "^9.9.5",
+    "robots-parser": "^3.0.1",
+    "tldts": "^7.0.17",
+    "undici": "^7.16.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.1",
+    "@types/nodemailer": "^7.0.1",
+    "prisma": "^6.16.2",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

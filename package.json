@@ -1,0 +1,27 @@
+{
+  "name": "cartographie-siteweb",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Cartographie de sites web : pages HTML, PDF et détection de couche texte.",
+  "packageManager": "pnpm@10.15.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "infra": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "dev": "concurrently -n api,worker,web -c blue,magenta,green \"corepack pnpm run dev:api\" \"corepack pnpm run dev:worker\" \"corepack pnpm run dev:web\"",
+    "dev:api": "corepack pnpm --filter @cartographie/api dev",
+    "dev:worker": "corepack pnpm --filter @cartographie/api dev:worker",
+    "dev:web": "corepack pnpm --filter @cartographie/web dev",
+    "test": "corepack pnpm --filter @cartographie/api test",
+    "typecheck": "corepack pnpm -r --if-present typecheck",
+    "db:generate": "corepack pnpm --filter @cartographie/api db:generate",
+    "db:migrate": "corepack pnpm --filter @cartographie/api db:migrate",
+    "db:deploy": "corepack pnpm --filter @cartographie/api db:deploy"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "typescript": "^5.9.2"
+  }
+}
