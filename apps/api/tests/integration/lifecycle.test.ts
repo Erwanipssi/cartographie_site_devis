@@ -2,48 +2,14 @@
  * Tests d'intégration : vraie base PostgreSQL (schéma jetable) et vrai Redis, ceux de `pnpm start`.
  * Ignorés si la base ne répond pas, pour que `pnpm test` reste utilisable sans Docker.
  */
-import { randomBytes } from 'node:crypto'
-import { readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { config as loadEnv } from 'dotenv'
-import { PrismaClient } from '@prisma/client'
+import type { PrismaClient } from '@prisma/client'
 import { crawlConfigSchema } from '@cartographie/shared'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { Fetcher } from '../../src/modules/crawler/types'
-
-loadEnv({ path: join(__dirname, '..', '..', '.env') })
-const baseUrl = process.env.DATABASE_URL ?? ''
-const schema = `it_${randomBytes(4).toString('hex')}`
-const testUrl = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}schema=${schema}`
-
-async function databaseReachable(): Promise<boolean> {
-  if (!baseUrl) return false
-  const probe = new PrismaClient({ datasourceUrl: baseUrl })
-  try {
-    await probe.$queryRaw`SELECT 1`
-    return true
-  } catch {
-    return false
-  } finally {
-    await probe.$disconnect()
-  }
-}
+import { createTestSchema, databaseReachable, dropTestSchema } from './test-db'
 
 const reachable = await databaseReachable()
-
-/** Applique les migrations du projet, instruction par instruction, dans le schéma de test. */
-async function migrate(client: PrismaClient): Promise<void> {
-  await client.$executeRawUnsafe(`CREATE SCHEMA "${schema}"`)
-  const dir = join(__dirname, '..', '..', 'prisma', 'migrations')
-  for (const name of readdirSync(dir).filter((entry) => /^\d+_/.test(entry)).sort()) {
-    const sql = readFileSync(join(dir, name, 'migration.sql'), 'utf8')
-    const statements = sql
-      .split(/;\s*(?:\r?\n|$)/)
-      .map((statement) => statement.replace(/^\s*--.*$/gm, '').trim())
-      .filter(Boolean)
-    for (const statement of statements) await client.$executeRawUnsafe(statement)
-  }
-}
+let schema = ''
 
 function memoryFetcher(routes: Record<string, { status?: number; contentType: string; body: string }>): Fetcher {
   return async (url) => {
@@ -64,10 +30,9 @@ describe.skipIf(!reachable)('cycle de vie d’une analyse (base réelle)', () =>
 
   beforeAll(async () => {
     // Le client Prisma de l'application lit DATABASE_URL à l'import : on le pointe sur le schéma de test d'abord.
-    process.env.DATABASE_URL = testUrl
-    const admin = new PrismaClient({ datasourceUrl: testUrl })
-    await migrate(admin)
-    await admin.$disconnect()
+    const test = await createTestSchema()
+    schema = test.schema
+    process.env.DATABASE_URL = test.url
     ;({ prisma } = await import('../../src/lib/prisma'))
     lifecycle = await import('../../src/modules/analyses/lifecycle')
     watchdog = await import('../../src/modules/analyses/watchdog')
@@ -79,7 +44,7 @@ describe.skipIf(!reachable)('cycle de vie d’une analyse (base réelle)', () =>
   afterAll(async () => {
     if (!prisma) return
     for (const id of pdfJobIds) await queues.pdfQueue.remove(id).catch(() => undefined)
-    await prisma.$executeRawUnsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`)
+    await dropTestSchema(prisma, schema)
     await prisma.$disconnect()
     await queues.closeQueues()
     redis.redis.disconnect()

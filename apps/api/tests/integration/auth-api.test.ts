@@ -1,34 +1,25 @@
 /**
- * Authentification de bout en bout : l'API réelle (Fastify, sans réseau) avec un mot de passe défini.
- * Les routes protégées n'interrogent la base qu'une fois la session acceptée : ignoré si PostgreSQL ne répond pas.
+ * Authentification de bout en bout : l'API réelle (Fastify, sans réseau) avec un mot de passe défini,
+ * sur un schéma de test migré (la base peut être vierge, comme en CI). Ignoré si PostgreSQL ne répond pas.
  */
-import { join } from 'node:path'
-import { config as loadEnv } from 'dotenv'
-import { PrismaClient } from '@prisma/client'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { FastifyInstance } from 'fastify'
+import { createTestSchema, databaseReachable, dropTestSchema } from './test-db'
 
-loadEnv({ path: join(__dirname, '..', '..', '.env') })
 process.env.APP_PASSWORD = 'mot-de-passe-de-test'
 process.env.SESSION_SECRET = 'cle-de-test-cle-de-test-cle-de-test'
 
-async function databaseReachable(): Promise<boolean> {
-  const probe = new PrismaClient()
-  try {
-    await probe.$queryRaw`SELECT 1`
-    return true
-  } catch {
-    return false
-  } finally {
-    await probe.$disconnect()
-  }
-}
 const reachable = await databaseReachable()
 
 describe.skipIf(!reachable)('accès protégé par mot de passe', () => {
   let app: FastifyInstance
+  let schema = ''
 
   beforeAll(async () => {
+    // Le client Prisma de l'application lit DATABASE_URL à l'import : on le pointe sur le schéma de test d'abord.
+    const test = await createTestSchema()
+    schema = test.schema
+    process.env.DATABASE_URL = test.url
     const { buildApp } = await import('../../src/app')
     app = await buildApp()
     await app.ready()
@@ -39,6 +30,7 @@ describe.skipIf(!reachable)('accès protégé par mot de passe', () => {
     const { closeQueues } = await import('../../src/lib/queues')
     const { redis } = await import('../../src/lib/redis')
     const { prisma } = await import('../../src/lib/prisma')
+    if (schema) await dropTestSchema(prisma, schema)
     await closeQueues()
     redis.disconnect()
     await prisma.$disconnect()
