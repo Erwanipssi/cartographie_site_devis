@@ -48,8 +48,15 @@ export type CrawlHooks = {
   /** Appelé quand le sitemap a été lu en entier, pour le mémoriser. */
   onSitemapRead?: (urls: string[]) => Promise<void>
   /** Appelé une fois le sitemap lu, avec le nombre d’URL distinctes trouvées. */
-  onSitemap?: (urlCount: number) => Promise<void>
+  onSitemap?: (urlCount: number, source: SitemapSource) => Promise<void>
 }
+
+/**
+ * Origine de la liste d’URL du sitemap :
+ * live = lu en entier en ligne · partial = certains sous-sitemaps sans réponse (complété par la version connue si elle existe)
+ * cache = sitemap en panne, dernière version connue utilisée · none = aucun sitemap exploitable
+ */
+export type SitemapSource = 'live' | 'partial' | 'cache' | 'none'
 
 export type CrawlStats = {
   htmlCount: number
@@ -58,6 +65,7 @@ export type CrawlStats = {
   errorCount: number
   /** URL distinctes lues dans le sitemap (0 si absent ou illisible). */
   sitemapUrlCount: number
+  sitemapSource: SitemapSource
   /** Vrai si l’analyse s’est limitée au sitemap (+ PDF liés). */
   usedSitemap: boolean
   /** Vrai si le sitemap en ligne a échoué et que la dernière version connue a servi. */

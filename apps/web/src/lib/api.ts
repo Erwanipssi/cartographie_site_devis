@@ -35,6 +35,7 @@ export type AnalysisSite = {
   errorCount: number
   pendingPdfCount: number
   sitemapUrlCount: number | null
+  sitemapSource: 'live' | 'partial' | 'cache' | 'none' | null
   durationMs: number | null
   errorMessage: string | null
   startedAt: string | null

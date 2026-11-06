@@ -53,6 +53,7 @@ export async function publishSite(analysisId: string, analysisSiteId: string, ty
       errorCount: row.errorCount,
       pendingPdfCount: row.pendingPdfCount,
       sitemapUrlCount: row.sitemapUrlCount,
+      sitemapSource: row.sitemapSource,
     }),
   )
 }
@@ -79,8 +80,8 @@ export async function recordPage(analysisId: string, analysisSiteId: string, pag
   await publishSite(analysisId, analysisSiteId, 'site.progress')
 }
 
-export async function recordSitemap(analysisId: string, analysisSiteId: string, urlCount: number): Promise<void> {
-  await prisma.analysisSite.update({ where: { id: analysisSiteId }, data: { sitemapUrlCount: urlCount } })
+export async function recordSitemap(analysisId: string, analysisSiteId: string, urlCount: number, source: string): Promise<void> {
+  await prisma.analysisSite.update({ where: { id: analysisSiteId }, data: { sitemapUrlCount: urlCount, sitemapSource: source } })
   await publishSite(analysisId, analysisSiteId, 'site.progress', true)
 }
 

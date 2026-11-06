@@ -99,7 +99,13 @@ L’envoi de mail exige un SMTP dans `apps/api/.env` (`SMTP_HOST`, `SMTP_PORT`, 
 corepack pnpm test
 ```
 
-Les tests couvrent la normalisation d’URL, le refus des adresses privées, la classification du contenu, la lecture des sitemaps, l’extraction de liens, le crawl en mémoire (domaine, profondeur, plafond de pages) et la structure du classeur Excel.
+Les tests couvrent la normalisation d’URL, le refus des adresses privées, la classification du contenu, la lecture des sitemaps, l’extraction de liens, le crawl en mémoire (domaine, profondeur, plafond de pages, mode sitemap, robots.txt et Crawl-delay), la liste des PDF à traiter et la structure du classeur Excel.
+
+Les tests d’intégration (`apps/api/tests/integration`) utilisent la vraie base et le vrai Redis de `pnpm start` : chaque exécution crée un schéma PostgreSQL jetable, y applique les migrations, déroule une analyse complète et la surveillance des analyses figées, puis supprime le schéma. Sans Docker, ils sont ignorés.
+
+## Analyses figées
+
+Le worker vérifie chaque minute les analyses en cours. Un site dont le traitement a disparu de la file ou a échoué passe en échec, avec la raison affichée sur l’analyse ; un PDF dont l’analyse s’est perdue est clôturé en erreur pour que l’analyse se termine. Un traitement encore actif n’est jamais interrompu.
 
 ## Profil Docker complet
 

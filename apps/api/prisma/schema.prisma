@@ -102,6 +102,8 @@ model AnalysisSite {
   pendingPdfCount Int           @default(0)
   /// URL distinctes lues dans le sitemap du site (null tant que le sitemap n’a pas été lu).
   sitemapUrlCount Int?
+  /// Origine de cette liste : live, partial, cache ou none (voir SitemapSource côté crawler).
+  sitemapSource   String?
   discoveryDone   Boolean       @default(false)
   errorMessage    String?
   startedAt       DateTime?

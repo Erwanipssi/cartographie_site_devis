@@ -14,6 +14,7 @@ import { analyzePdfBuffer, pdfFailureMessage } from './modules/pdf-analyzer/anal
 import { executeSchedule } from './modules/scheduler/run'
 import { syncAllSchedules } from './modules/scheduler/sync'
 import { readConfig } from './modules/analyses/service'
+import { sweepStalledWork } from './modules/analyses/watchdog'
 
 const PDF_MIN_TIMEOUT_MS = 60_000
 
@@ -34,6 +35,15 @@ async function main(): Promise<void> {
   const heartbeat = setInterval(() => {
     void beat().catch(() => undefined)
   }, 5000)
+
+  // Surveillance des analyses figées, une fois par minute. Le verrou Redis évite que deux workers la lancent ensemble.
+  const sweep = async () => {
+    const acquired = await redis.set('watchdog:lock', String(process.pid), 'EX', 50, 'NX')
+    if (acquired) await sweepStalledWork()
+  }
+  const watchdog = setInterval(() => {
+    void sweep().catch((error: unknown) => logger.error({ err: error }, 'surveillance en échec'))
+  }, 60_000)
 
   const crawlWorker = new Worker(
     'crawl',
@@ -68,7 +78,7 @@ async function main(): Promise<void> {
           onPdf: async (page) => recordPdf(analysisId, analysisSiteId, page),
           onOther: async () => recordOther(analysisId, analysisSiteId),
           onError: async (error) => recordError(analysisId, analysisSiteId, error),
-          onSitemap: async (count) => recordSitemap(analysisId, analysisSiteId, count),
+          onSitemap: async (count, source) => recordSitemap(analysisId, analysisSiteId, count, source),
           deferPdfFetch: true,
           knownSitemap: readKnownSitemap(row.site.sitemapUrls, row.site.sitemapReadAt),
           onSitemapRead: async (urls) => {
@@ -197,6 +207,7 @@ async function main(): Promise<void> {
 
   const shutdown = async () => {
     clearInterval(heartbeat)
+    clearInterval(watchdog)
     await Promise.all([crawlWorker.close(), pdfWorker.close(), mailWorker.close(), scheduleWorker.close()])
     await prisma.$disconnect()
     redis.disconnect()

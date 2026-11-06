@@ -211,7 +211,17 @@ function ProgressCard({ row, analysisId }: { row: AnalysisSite; analysisId: stri
       <p className="mt-2 text-sm text-ink-600">
         {row.sitemapUrlCount != null ? `${row.sitemapUrlCount} URL dans le sitemap · ` : ''}{row.htmlCount} pages · {row.pdfCount} PDF découverts · {analyzed} PDF analysés · {row.errorCount} erreurs
       </p>
+      {row.sitemapSource && row.sitemapSource !== 'live' ? (
+        <p className={`mt-2 text-xs ${SITEMAP_SOURCES[row.sitemapSource].tone}`}>{SITEMAP_SOURCES[row.sitemapSource].text}</p>
+      ) : null}
       {row.errorMessage ? <p className="mt-1 text-sm text-clay">{row.errorMessage}</p> : null}
     </Link>
   )
+}
+
+// Seuls les cas où la liste du sitemap mérite une réserve sont signalés ; le détail est dans les erreurs du site.
+const SITEMAP_SOURCES: Record<'partial' | 'cache' | 'none', { text: string; tone: string }> = {
+  partial: { text: 'Sitemap partiel : certains sous-sitemaps n’ont pas répondu (voir les erreurs).', tone: 'text-amber' },
+  cache: { text: 'Sitemap indisponible : dernière version lue utilisée (date dans les erreurs).', tone: 'text-amber' },
+  none: { text: 'Aucun sitemap exploitable : le site a été parcouru en suivant ses liens.', tone: 'text-ink-600' },
 }

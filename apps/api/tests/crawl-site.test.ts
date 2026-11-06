@@ -381,4 +381,29 @@ describe('crawlSite', () => {
     expect(fetched.some((url) => url.endsWith('.pdf'))).toBe(false)
     expect(stats.pdfCount).toBe(1)
   })
+
+  it('respecte le Crawl-delay de robots.txt, plafonné à 30 s', async () => {
+    const times: number[] = []
+    const base = memoryFetcher({
+      'https://example.com/robots.txt': { contentType: 'text/plain', body: 'User-agent: *\nCrawl-delay: 0.3\n' },
+      'https://example.com/': { contentType: 'text/html', body: '<a href="/a">a</a>' },
+      'https://example.com/a': { contentType: 'text/html', body: '<p>a</p>' },
+    })
+    await crawlSite({
+      seedUrl: 'https://example.com/',
+      includeSubdomains: false,
+      userAgent: 'CartographieTest',
+      config: crawlConfigSchema.parse({ maxDepth: 1, maxPages: 5, concurrency: 2, delayMs: 0 }),
+      fetch: async (url) => {
+        if (!url.endsWith('robots.txt') && !url.includes('sitemap')) times.push(Date.now())
+        return base(url)
+      },
+      onPage: async () => undefined,
+      onPdf: async () => undefined,
+      onOther: async () => undefined,
+      onError: async () => undefined,
+    })
+    expect(times).toHaveLength(2)
+    expect(times[1]! - times[0]!).toBeGreaterThanOrEqual(280)
+  })
 })

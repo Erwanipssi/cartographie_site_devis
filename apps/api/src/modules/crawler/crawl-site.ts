@@ -4,7 +4,9 @@ import { classifyContentType, looksLikePdf } from '../../lib/classify'
 import { extractLinks } from '../../lib/links'
 import { parseSitemapLocs } from '../../lib/sitemap'
 import { isInScope, normalizeUrl } from '../../lib/url'
-import type { CrawlInput, CrawlStats, DiscoveredError } from './types'
+import type { CrawlInput, CrawlStats, DiscoveredError, SitemapSource } from './types'
+
+const MAX_CRAWL_DELAY_MS = 30_000
 
 type QueueItem = {
   url: string
@@ -35,10 +37,12 @@ export async function crawlSite(input: CrawlInput): Promise<CrawlStats> {
   const config: CrawlConfig = input.config
   const shouldCancel = input.shouldCancel ?? (async () => false)
 
+  // Délai entre deux requêtes : celui des réglages, relevé si robots.txt demande un Crawl-delay plus long.
+  let delayMs = config.delayMs
   let slot = Promise.resolve()
   const pace = async () => {
-    if (config.delayMs <= 0) return
-    const wait = slot.then(() => sleep(config.delayMs))
+    if (delayMs <= 0) return
+    const wait = slot.then(() => sleep(delayMs))
     slot = wait.catch(() => undefined)
     await wait
   }
@@ -73,6 +77,11 @@ export async function crawlSite(input: CrawlInput): Promise<CrawlStats> {
       const robots = robotsParser(`${origin}/robots.txt`, robotsBody)
       isAllowed = (url) => robots.isAllowed(url, input.userAgent) !== false
       sitemapSeeds.unshift(...robots.getSitemaps())
+      // Crawl-delay est en secondes ; plafonné à 30 s pour qu'une valeur aberrante ne fige pas l'analyse.
+      const crawlDelay = robots.getCrawlDelay(input.userAgent)
+      if (crawlDelay && Number.isFinite(crawlDelay) && crawlDelay > 0) {
+        delayMs = Math.max(delayMs, Math.min(Math.round(crawlDelay * 1000), MAX_CRAWL_DELAY_MS))
+      }
     }
   }
 
@@ -113,7 +122,8 @@ export async function crawlSite(input: CrawlInput): Promise<CrawlStats> {
   for (const sitemapUrl of sitemapSeeds) await walkSitemap(sitemapUrl)
 
   // Lecture complète : on la mémorise. Lecture ratée ou partielle : on complète avec la dernière version connue.
-  const liveComplete = discovered.length > 0 && failedSitemaps.length === 0
+  const liveCount = discovered.length
+  const liveComplete = liveCount > 0 && failedSitemaps.length === 0
   const known = input.knownSitemap && input.knownSitemap.urls.length > 0 ? input.knownSitemap : null
   const usedKnownSitemap = !liveComplete && known !== null
   if (liveComplete) {
@@ -131,8 +141,16 @@ export async function crawlSite(input: CrawlInput): Promise<CrawlStats> {
   const followLinks = !sitemapMode || sitemapUrlCount === 0
   // Crawl de secours du mode sitemap : la profondeur réglée (inutile en mode sitemap) ne doit pas brider le parcours.
   const maxDepth = sitemapMode ? 8 : config.maxDepth
+  // D'où vient la liste d'URL : affiché à côté du compteur pour juger de sa fiabilité.
+  const sitemapSource: SitemapSource = liveComplete
+    ? 'live'
+    : liveCount > 0
+      ? 'partial'
+      : usedKnownSitemap
+        ? 'cache'
+        : 'none'
   try {
-    await input.onSitemap?.(sitemapUrlCount)
+    await input.onSitemap?.(sitemapUrlCount, sitemapSource)
   } catch {
     /* compteur indicatif */
   }
@@ -332,7 +350,7 @@ export async function crawlSite(input: CrawlInput): Promise<CrawlStats> {
     pump()
   })
 
-  return { htmlCount, pdfCount, otherCount, errorCount, sitemapUrlCount, usedSitemap: !followLinks, usedKnownSitemap }
+  return { htmlCount, pdfCount, otherCount, errorCount, sitemapUrlCount, sitemapSource, usedSitemap: !followLinks, usedKnownSitemap }
 }
 
 function sleep(ms: number): Promise<void> {
