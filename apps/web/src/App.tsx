@@ -4,6 +4,8 @@ import { AnalysisPage } from './pages/AnalysisPage'
 import { HistoryPage } from './pages/HistoryPage'
 import { HomePage } from './pages/HomePage'
 import { PdfToFixPage } from './pages/PdfToFixPage'
+import { DashboardPage } from './pages/DashboardPage'
+import { EvolutionPage } from './pages/EvolutionPage'
 import { SchedulesPage } from './pages/SchedulesPage'
 import { SiteDetailPage } from './pages/SiteDetailPage'
 
@@ -19,6 +21,8 @@ export function App() {
           <Route path="/analyses/:id" element={<AnalysisPage />} />
           <Route path="/analyses/:id/sites/:analysisSiteId" element={<SiteDetailPage />} />
           <Route path="/analyses/:id/pdf-a-traiter" element={<PdfToFixPage />} />
+          <Route path="/analyses/:id/sites/:analysisSiteId/evolution" element={<EvolutionPage />} />
+          <Route path="/tableau-de-bord" element={<DashboardPage />} />
           <Route path="/historique" element={<HistoryPage />} />
           <Route path="/planifications" element={<SchedulesPage />} />
         </Route>
@@ -43,6 +47,9 @@ function Shell() {
           <nav className="flex gap-1 text-sm">
             <NavLink to="/" end className={linkClass}>
               Sites
+            </NavLink>
+            <NavLink to="/tableau-de-bord" className={linkClass}>
+              Tableau de bord
             </NavLink>
             <NavLink to="/historique" className={linkClass}>
               Historique

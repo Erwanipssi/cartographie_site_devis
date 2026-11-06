@@ -112,6 +112,13 @@ Depuis une analyse, « PDF à traiter » propose deux vues, chacune exportable e
 
 Les contrôles d’accessibilité ne concernent que les PDF analysés après leur ajout : relancez l’analyse d’un site pour les obtenir.
 
+## Suivi dans le temps
+
+- **Tableau de bord** (menu) : la dernière analyse de chaque site, avec la part de PDF lisibles, les PDF à traiter et la part de PDF accessibles, et leur variation depuis l’analyse précédente.
+- **Évolution** (lien sur chaque site d’une analyse terminée) : PDF publiés ou retirés, couche texte ajoutée ou dégradée, accessibilité améliorée ou dégradée, pages apparues ou disparues. La comparaison se fait par défaut avec l’analyse précédente du même mode (sitemap ou crawl) ; une autre peut être choisie.
+
+Associé à une planification mensuelle avec envoi du rapport par mail, c’est un suivi régulier de chaque site.
+
 ## Analyses figées
 
 Le worker vérifie chaque minute les analyses en cours. Un site dont le traitement a disparu de la file ou a échoué passe en échec, avec la raison affichée sur l’analyse ; un PDF dont l’analyse s’est perdue est clôturé en erreur pour que l’analyse se termine. Un traitement encore actif n’est jamais interrompu.

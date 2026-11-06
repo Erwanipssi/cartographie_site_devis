@@ -289,3 +289,54 @@ export const auth = {
   login: (password: string) => request<{ authenticated: boolean }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ password }) }),
   logout: () => request<{ authenticated: boolean }>('/api/auth/logout', { method: 'POST', body: '{}' }),
 }
+
+export type Run = {
+  id: string
+  analysisId: string
+  date: string
+  mode: 'sitemap' | 'crawl'
+  htmlCount: number
+  pdfCount: number
+  pdfTextCount: number
+  pdfImageCount: number
+  pdfPartialCount: number
+  pdfErrorCount: number
+  errorCount: number
+  sitemapUrlCount: number | null
+}
+
+export type EvolutionPdf = {
+  url: string
+  name: string
+  ocrStatus: string
+  tagged: boolean | null
+  titleStatus: string | null
+  lang: string | null
+  parentUrl: string | null
+  before?: { ocrStatus: string; tagged: boolean | null; titleStatus: string | null; lang: string | null }
+}
+
+type Capped<T> = { total: number; items: T[] }
+
+export type Evolution = {
+  site: string
+  current: Run
+  candidates: Run[]
+  previous: Run | null
+  accessibility?: { before: { checked: number; conform: number }; now: { checked: number; conform: number } }
+  pdfs?: Record<'added' | 'removed' | 'textFixed' | 'textRegressed' | 'a11yImproved' | 'a11yRegressed', Capped<EvolutionPdf>>
+  pages?: { added: Capped<string>; removed: Capped<string> }
+}
+
+export type OverviewSite = {
+  siteId: string
+  hostname: string
+  latest: (Run & { accessibility: { checked: number; conform: number } }) | null
+  previous: (Run & { accessibility: { checked: number; conform: number } | null }) | null
+}
+
+export const insights = {
+  evolution: (analysisId: string, analysisSiteId: string, previous?: string) =>
+    request<Evolution>(`/api/analyses/${analysisId}/sites/${analysisSiteId}/evolution${previous ? `?previous=${previous}` : ''}`),
+  overview: () => request<{ sites: OverviewSite[] }>('/api/overview'),
+}

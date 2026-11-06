@@ -7,6 +7,7 @@ import { env } from './env'
 import { ApiError } from './lib/http'
 import { registerAnalyses } from './routes/analyses'
 import { registerAuth } from './routes/auth'
+import { registerEvolution } from './routes/evolution'
 import { registerHealth } from './routes/health'
 import { registerRecipients } from './routes/recipients'
 import { registerSchedules } from './routes/schedules'
@@ -55,5 +56,6 @@ export async function buildApp() {
   await registerAnalyses(app)
   await registerRecipients(app)
   await registerSchedules(app)
+  await registerEvolution(app)
   return app
 }

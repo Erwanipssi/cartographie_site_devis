@@ -127,8 +127,16 @@ export function AnalysisPage() {
                 <td>
                   <StatusBadge value={row.status} />
                 </td>
-                <td className="text-right">
-                  <a className="whitespace-nowrap font-medium text-accent underline-offset-2 hover:underline" href={sitemapUrl(id, row.id)} title="URL découvertes, au format sitemap.xml">
+                <td className="whitespace-nowrap text-right">
+                  {row.status === 'completed' ? (
+                    <>
+                      <Link className="font-medium text-accent underline-offset-2 hover:underline" to={`/analyses/${id}/sites/${row.id}/evolution`} title="Changements depuis l’analyse précédente">
+                        Évolution
+                      </Link>
+                      <span className="text-ink-400"> · </span>
+                    </>
+                  ) : null}
+                  <a className="font-medium text-accent underline-offset-2 hover:underline" href={sitemapUrl(id, row.id)} title="URL découvertes, au format sitemap.xml">
                     sitemap.xml
                   </a>
                 </td>
