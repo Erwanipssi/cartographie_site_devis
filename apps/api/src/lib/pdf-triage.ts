@@ -54,7 +54,9 @@ const CSV_HEADER = ['Statut', 'Document', 'Pages', 'Pages sans texte', 'Taille (
 
 export function csvCell(value: string | number | null): string {
   if (value == null) return ''
-  const text = String(value)
+  // Titres et adresses viennent de sites tiers : un texte commençant par = + - @ serait exécuté comme
+  // formule à l'ouverture dans Excel (injection CSV). L'apostrophe le force en texte.
+  const text = typeof value === 'string' && /^[=+\-@\t\r]/.test(value) ? `'${value}` : String(value)
   return /[";\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
 }
 

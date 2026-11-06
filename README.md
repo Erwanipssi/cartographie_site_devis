@@ -116,15 +116,28 @@ Les contrôles d’accessibilité ne concernent que les PDF analysés après leu
 
 Le worker vérifie chaque minute les analyses en cours. Un site dont le traitement a disparu de la file ou a échoué passe en échec, avec la raison affichée sur l’analyse ; un PDF dont l’analyse s’est perdue est clôturé en erreur pour que l’analyse se termine. Un traitement encore actif n’est jamais interrompu.
 
+## Sécurité
+
+- **Usage local (par défaut)** : l’API écoute sur `127.0.0.1`, PostgreSQL et Redis ne sont publiés que sur `127.0.0.1`. Rien n’est joignable depuis le réseau.
+- **Usage partagé** : définissez `APP_PASSWORD` dans `apps/api/.env`. L’interface demande alors ce mot de passe ; la session est un cookie `HttpOnly`, `SameSite=Strict`, signé (`SESSION_SECRET`), valable 7 jours ; 10 essais ratés bloquent une adresse 15 minutes.
+- L’API **refuse de démarrer** si elle est ouverte au réseau (`API_HOST` autre que `127.0.0.1`) sans `APP_PASSWORD`, sauf `ALLOW_OPEN_ACCESS=true` (déconseillé).
+- Les exports CSV neutralisent les formules (`=`, `+`, `-`, `@`) : titres et adresses viennent de sites tiers.
+- Les adresses locales et privées sont refusées comme cibles de crawl (protection SSRF).
+- Dépendances : `corepack pnpm audit --prod`. Restent deux alertes qui demandent une migration majeure (zod 4, Prisma 7).
+
 ## Profil Docker complet
 
-Postgres et Redis suffisent en développement. Pour tout lancer dans Docker :
+Postgres et Redis suffisent en développement. Pour déployer l’ensemble (serveur interne, poste partagé) :
+
+1. Dans `apps/api/.env`, définissez `APP_PASSWORD` et `SESSION_SECRET` (obligatoire : sans mot de passe, l’API refuse de démarrer).
+2. Pour un serveur partagé, choisissez aussi un mot de passe de base : variable `POSTGRES_PASSWORD` (dans un fichier `.env` à la racine du dépôt). À faire avant le premier démarrage : PostgreSQL ne l’applique qu’à la création de sa base.
+3. Lancez :
 
 ```powershell
-docker compose --profile full up --build
+docker compose --profile full up -d --build
 ```
 
-L’interface est alors servie sur http://localhost:8080. L’API applique les migrations au démarrage (`RUN_MIGRATIONS=true`).
+L’interface est servie sur http://localhost:8080 (seul port exposé ; l’API reste interne au réseau Docker). L’API applique les migrations au démarrage (`RUN_MIGRATIONS=true`). Les conteneurs de l’API et du worker tournent sans droits administrateur. Pour un accès hors du poste, placez un reverse proxy HTTPS devant le port 8080 : le cookie de session devient alors `Secure`.
 
 ## Limites de cette version
 

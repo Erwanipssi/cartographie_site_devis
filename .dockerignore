@@ -1,0 +1,14 @@
+# Rien de local ni de secret dans les images :
+# - dépendances installées pour l'hôte (binaires Windows/macOS incompatibles avec le conteneur Linux) ;
+# - fichiers .env (mots de passe) : ils sont fournis au conteneur par env_file, jamais inscrits dans l'image ;
+# - données, journaux, historique Git, réglages d'éditeur.
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+!.env.example
+apps/api/data
+**/*.log
+.git
+.claude
+coverage

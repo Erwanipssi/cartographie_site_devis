@@ -9,3 +9,6 @@ data
 .DS_Store
 apps/api/prisma/*.db
 apps/api/prisma/*.db-journal
+
+# Certificats d’autorité propres au réseau local (voir docker/certs/README.md)
+docker/certs/*.crt

@@ -1,4 +1,5 @@
 import { NavLink, Outlet, Route, Routes } from 'react-router-dom'
+import { AuthGate, LogoutButton } from './components/AuthGate'
 import { AnalysisPage } from './pages/AnalysisPage'
 import { HistoryPage } from './pages/HistoryPage'
 import { HomePage } from './pages/HomePage'
@@ -11,16 +12,18 @@ const linkClass = ({ isActive }: { isActive: boolean }) =>
 
 export function App() {
   return (
-    <Routes>
-      <Route element={<Shell />}>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/analyses/:id" element={<AnalysisPage />} />
-        <Route path="/analyses/:id/sites/:analysisSiteId" element={<SiteDetailPage />} />
-        <Route path="/analyses/:id/pdf-a-traiter" element={<PdfToFixPage />} />
-        <Route path="/historique" element={<HistoryPage />} />
-        <Route path="/planifications" element={<SchedulesPage />} />
-      </Route>
-    </Routes>
+    <AuthGate>
+      <Routes>
+        <Route element={<Shell />}>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/analyses/:id" element={<AnalysisPage />} />
+          <Route path="/analyses/:id/sites/:analysisSiteId" element={<SiteDetailPage />} />
+          <Route path="/analyses/:id/pdf-a-traiter" element={<PdfToFixPage />} />
+          <Route path="/historique" element={<HistoryPage />} />
+          <Route path="/planifications" element={<SchedulesPage />} />
+        </Route>
+      </Routes>
+    </AuthGate>
   )
 }
 
@@ -47,6 +50,7 @@ function Shell() {
             <NavLink to="/planifications" className={linkClass}>
               Planifications
             </NavLink>
+            <LogoutButton />
           </nav>
         </div>
       </header>

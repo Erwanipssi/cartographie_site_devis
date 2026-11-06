@@ -1,2 +1,8 @@
 # Prisma vérifie une empreinte de chaque migration : aucune conversion de fin de ligne.
 apps/api/prisma/migrations/**/*.sql -text
+
+# Fichiers lus par Linux dans les conteneurs : toujours LF (un « \ » suivi de CRLF casse un Dockerfile).
+**/Dockerfile text eol=lf
+*.conf text eol=lf
+*.sh text eol=lf
+docker-compose.yml text eol=lf

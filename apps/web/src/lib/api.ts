@@ -107,6 +107,13 @@ export type PageResult<T> = { items: T[]; total: number; page: number; pageSize:
 
 export type Health = { ok: boolean; db: boolean; redis: boolean; worker: boolean; smtp: boolean }
 
+/** Émis quand l'API répond « connexion requise » : l'application affiche alors l'écran de connexion. */
+export const AUTH_REQUIRED_EVENT = 'cartographie:auth-required'
+
+function signalAuth(response: Response): void {
+  if (response.status === 401) window.dispatchEvent(new Event(AUTH_REQUIRED_EVENT))
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
@@ -115,6 +122,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       ...init?.headers,
     },
   })
+  signalAuth(response)
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as { error?: { message?: string } } | null
     throw new Error(body?.error?.message ?? `Erreur ${response.status}`)
@@ -230,6 +238,7 @@ export function pdfsToFix(analysisId: string, params: Record<string, string | nu
   const search = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) if (value !== undefined && value !== '') search.set(key, String(value))
   return fetch(`/api/analyses/${analysisId}/pdfs-to-fix?${search}`).then(async (response) => {
+    signalAuth(response)
     if (!response.ok) throw new Error(`Erreur ${response.status}`)
     return response.json() as Promise<PdfsToFixResult>
   })
@@ -263,6 +272,7 @@ export function pdfsAccessibility(analysisId: string, params: Record<string, str
   const search = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) if (value !== undefined && value !== '') search.set(key, String(value))
   return fetch(`/api/analyses/${analysisId}/pdfs-accessibility?${search}`).then(async (response) => {
+    signalAuth(response)
     if (!response.ok) throw new Error(`Erreur ${response.status}`)
     return response.json() as Promise<PdfsAccessibilityResult>
   })
@@ -270,4 +280,12 @@ export function pdfsAccessibility(analysisId: string, params: Record<string, str
 
 export function pdfsAccessibilityCsvUrl(analysisId: string, issues: A11yIssue[]): string {
   return `/api/analyses/${analysisId}/pdfs-accessibility.csv?issue=${issues.join(',')}`
+}
+
+export type AuthState = { required: boolean; authenticated: boolean }
+
+export const auth = {
+  session: () => request<AuthState>('/api/auth/session'),
+  login: (password: string) => request<{ authenticated: boolean }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ password }) }),
+  logout: () => request<{ authenticated: boolean }>('/api/auth/logout', { method: 'POST', body: '{}' }),
 }

@@ -1,3 +1,8 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# Versions corrigées imposées aux dépendances indirectes (audit de sécurité).
+# uuid < 11.1.1 (via exceljs) : GHSA « missing buffer bounds check ».
+overrides:
+  "uuid@<11.1.1": "11.1.1"
