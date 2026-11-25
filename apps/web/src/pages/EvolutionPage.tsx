@@ -57,9 +57,11 @@ export function EvolutionPage() {
             ) : null}
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <Delta label="Pages" before={data.previous.htmlCount} now={data.current.htmlCount} neutral />
             <Delta label="PDF" before={data.previous.pdfCount} now={data.current.pdfCount} neutral />
+            {data.pdfPages ? <Delta label="Pages PDF" before={data.pdfPages.before.pages} now={data.pdfPages.now.pages} neutral /> : null}
+            {data.pdfPages ? <Delta label="Pages PDF sans texte" before={data.pdfPages.before.withoutText} now={data.pdfPages.now.withoutText} lowerIsBetter /> : null}
             <Delta
               label="PDF à traiter (texte)"
               before={data.previous.pdfImageCount + data.previous.pdfPartialCount}

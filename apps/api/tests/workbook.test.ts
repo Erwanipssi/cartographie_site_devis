@@ -17,6 +17,8 @@ describe('buildWorkbook', () => {
           otherCount: 0,
           errorCount: 0,
           durationMs: 1500,
+          pdfPages: 12,
+          pdfPagesWithoutText: 5,
           status: 'completed',
         },
       ],
@@ -38,6 +40,14 @@ describe('buildWorkbook', () => {
     await workbook.xlsx.load(buffer as never)
     expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(['Synthèse', 'PDF à traiter', 'Pages', 'PDF', 'Accessibilité PDF', 'Erreurs'])
     expect(workbook.getWorksheet('PDF')?.getCell('C2').value).toBe('Non OCRisé')
-    expect(workbook.getWorksheet('Synthèse')?.getCell('A1').value).toBe('Site')
+    const summary = workbook.getWorksheet('Synthèse')!
+    expect(summary.getCell('A1').value).toBe('Site')
+    // Pages additionnées sur les PDF du site, dont celles sans texte (à OCRiser).
+    expect([summary.getCell('I1').value, summary.getCell('I2').value, summary.getCell('J1').value, summary.getCell('J2').value]).toEqual([
+      'Pages PDF',
+      12,
+      'Pages PDF sans texte',
+      5,
+    ])
   })
 })

@@ -5,6 +5,7 @@ import { comparePages, comparePdfs } from '../lib/evolution'
 import { ApiError } from '../lib/http'
 import { documentName } from '../lib/pdf-triage'
 import { prisma } from '../lib/prisma'
+import { EMPTY_PDF_PAGES, pdfPagesBySite } from '../modules/analyses/pdf-pages'
 import { readConfig } from '../modules/analyses/service'
 
 /** Au-delà, les listes sont tronquées (le total reste exact) : la page doit rester lisible. */
@@ -115,10 +116,12 @@ export async function registerEvolution(app: FastifyInstance): Promise<void> {
         pagesNow.map((page) => page.url),
       )
       const named = <T extends { url: string }>(list: T[]) => list.map((item) => ({ ...item, name: documentName(item.url) }))
+      const pdfPages = await pdfPagesBySite([previous.id, current.id])
       return {
         ...base,
         previous,
         accessibility: { before: a11yBefore, now: a11yNow },
+        pdfPages: { before: pdfPages.get(previous.id) ?? EMPTY_PDF_PAGES, now: pdfPages.get(current.id) ?? EMPTY_PDF_PAGES },
         pdfs: {
           added: cap(named(pdfs.added)),
           removed: cap(named(pdfs.removed)),
@@ -141,12 +144,18 @@ export async function registerEvolution(app: FastifyInstance): Promise<void> {
         const latest = runs[0]
         if (!latest) return { siteId: site.id, hostname: site.hostname, latest: null, previous: null }
         const previous = defaultPrevious(latest, runs.slice(1)) ?? null
-        const [a11yLatest, a11yPrevious] = await Promise.all([accessibility(latest.id), previous ? accessibility(previous.id) : null])
+        const [a11yLatest, a11yPrevious, pdfPages] = await Promise.all([
+          accessibility(latest.id),
+          previous ? accessibility(previous.id) : null,
+          pdfPagesBySite(previous ? [latest.id, previous.id] : [latest.id]),
+        ])
         return {
           siteId: site.id,
           hostname: site.hostname,
-          latest: { ...latest, accessibility: a11yLatest },
-          previous: previous ? { ...previous, accessibility: a11yPrevious } : null,
+          latest: { ...latest, accessibility: a11yLatest, pdfPages: pdfPages.get(latest.id) ?? EMPTY_PDF_PAGES },
+          previous: previous
+            ? { ...previous, accessibility: a11yPrevious, pdfPages: pdfPages.get(previous.id) ?? EMPTY_PDF_PAGES }
+            : null,
         }
       }),
     )

@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Notice, StatusBadge } from '../components/Badges'
 import { RecipientPicker } from '../components/RecipientPicker'
-import { api, exportUrl, sitemapUrl, type AnalysisSite } from '../lib/api'
+import { api, exportUrl, sitemapUrl, type AnalysisSite, type PdfPageTotals } from '../lib/api'
 import { analyzedPdfCount, formatDuration } from '../lib/format'
 import { useAnalysisStream } from '../lib/useAnalysisStream'
 
@@ -69,6 +69,7 @@ export function AnalysisPage() {
         <Metric label="PDF texte" value={totals.pdfText ?? 0} />
         <Metric label="Erreurs" value={totals.errors ?? 0} />
       </div>
+      <PdfPagesSection totals={analysis.data.pdfPages} pdfCount={totals.pdf ?? 0} />
       {(totals.pdfImage ?? 0) + (totals.pdfPartial ?? 0) + (totals.pdfError ?? 0) > 0 ? (
         <Link
           to={`/analyses/${id}/pdf-a-traiter`}
@@ -99,6 +100,7 @@ export function AnalysisPage() {
               <th>Sitemap</th>
               <th>Pages</th>
               <th>PDF</th>
+              <th>Pages PDF</th>
               <th>Texte</th>
               <th>Image</th>
               <th>Partiel</th>
@@ -119,6 +121,7 @@ export function AnalysisPage() {
                 <td>{row.sitemapUrlCount ?? '—'}</td>
                 <td>{row.htmlCount}</td>
                 <td>{row.pdfCount}</td>
+                <td className="tabular-nums">{row.pdfPages.pages.toLocaleString('fr-FR')}</td>
                 <td>{row.pdfTextCount}</td>
                 <td>{row.pdfImageCount}</td>
                 <td>{row.pdfPartialCount}</td>
@@ -196,6 +199,51 @@ export function AnalysisPage() {
         </div>
       ) : null}
     </div>
+  )
+}
+
+const integer = new Intl.NumberFormat('fr-FR')
+
+/** Pages contenues dans les PDF, additionnées sur tous les PDF analysés, avec la part sans texte (à OCRiser). */
+function PdfPagesSection({ totals, pdfCount }: { totals: PdfPageTotals; pdfCount: number }) {
+  if (pdfCount === 0) return null
+  const textShare = totals.pages > 0 ? (totals.withText / totals.pages) * 100 : 0
+  const average = totals.documents > 0 ? Math.round(totals.pages / totals.documents) : 0
+  return (
+    <section className="card space-y-3" aria-labelledby="pdf-pages-title">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 id="pdf-pages-title" className="text-sm">
+          Pages dans les PDF
+        </h2>
+        <p className="text-xs text-ink-600">
+          {integer.format(totals.documents)} PDF comptés{totals.documents < pdfCount ? ` sur ${integer.format(pdfCount)} (illisibles ou en cours exclus)` : ''}
+          {average ? ` · ${integer.format(average)} pages en moyenne` : ''}
+        </p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div>
+          <p className="text-xs font-medium text-ink-600">Total des pages</p>
+          <p className="text-2xl font-semibold tabular-nums tracking-tight">{integer.format(totals.pages)}</p>
+        </div>
+        <div>
+          <p className="text-xs font-medium text-ink-600">Avec texte</p>
+          <p className="text-2xl font-semibold tabular-nums tracking-tight text-pine">{integer.format(totals.withText)}</p>
+        </div>
+        <div>
+          <p className="text-xs font-medium text-ink-600">Sans texte (à OCRiser)</p>
+          <p className={`text-2xl font-semibold tabular-nums tracking-tight ${totals.withoutText > 0 ? 'text-clay' : ''}`}>{integer.format(totals.withoutText)}</p>
+        </div>
+      </div>
+      {totals.pages > 0 ? (
+        <div
+          className="flex h-2 overflow-hidden rounded-full bg-red-100"
+          role="img"
+          aria-label={`${Math.round(textShare)} % des pages PDF ont du texte`}
+        >
+          <div className="bg-pine" style={{ width: `${textShare}%` }} />
+        </div>
+      ) : null}
+    </section>
   )
 }
 

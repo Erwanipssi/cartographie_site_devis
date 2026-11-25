@@ -31,6 +31,7 @@ export function DashboardPage() {
                 <th>Dernière analyse</th>
                 <th className="text-right">Pages</th>
                 <th className="text-right">PDF</th>
+                <th className="text-right">Pages PDF</th>
                 <th className="text-right">PDF avec texte</th>
                 <th className="text-right">PDF à traiter</th>
                 <th className="text-right">PDF accessibles</th>
@@ -89,6 +90,9 @@ function Row({ site }: { site: OverviewSite }) {
       </td>
       <td className="text-right">
         <Trend now={latest.pdfCount} before={previous?.pdfCount} neutral />
+      </td>
+      <td className="text-right">
+        <Trend now={latest.pdfPages.pages} before={previous?.pdfPages.pages} neutral />
       </td>
       <td className="text-right">
         <Trend now={textShare} before={previous ? percent(previous.pdfTextCount, previous.pdfCount) : null} suffix=" %" />

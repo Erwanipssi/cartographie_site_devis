@@ -36,6 +36,8 @@ export type AnalysisSite = {
   pendingPdfCount: number
   sitemapUrlCount: number | null
   sitemapSource: 'live' | 'partial' | 'cache' | 'none' | null
+  /** Pages contenues dans les PDF analysés de ce site. */
+  pdfPages: PdfPageTotals
   durationMs: number | null
   errorMessage: string | null
   startedAt: string | null
@@ -175,7 +177,7 @@ export const api = {
       page: number
       pageSize: number
     }>(`/api/analyses?page=${page}`),
-  analysis: (id: string) => request<{ analysis: AnalysisDetail; totals: Record<string, number> }>(`/api/analyses/${id}`),
+  analysis: (id: string) => request<{ analysis: AnalysisDetail; totals: Record<string, number>; pdfPages: PdfPageTotals }>(`/api/analyses/${id}`),
   analysisSites: (id: string) => request<{ sites: AnalysisSite[] }>(`/api/analyses/${id}/sites`),
   cancelAnalysis: (id: string) => request<{ ok: boolean }>(`/api/analyses/${id}/cancel`, { method: 'POST' }),
   pages: (analysisId: string, analysisSiteId: string, params: Record<string, string | number | undefined>) =>
@@ -324,6 +326,7 @@ export type Evolution = {
   candidates: Run[]
   previous: Run | null
   accessibility?: { before: { checked: number; conform: number }; now: { checked: number; conform: number } }
+  pdfPages?: { before: PdfPageTotals; now: PdfPageTotals }
   pdfs?: Record<'added' | 'removed' | 'textFixed' | 'textRegressed' | 'a11yImproved' | 'a11yRegressed', Capped<EvolutionPdf>>
   pages?: { added: Capped<string>; removed: Capped<string> }
 }
@@ -331,12 +334,21 @@ export type Evolution = {
 export type OverviewSite = {
   siteId: string
   hostname: string
-  latest: (Run & { accessibility: { checked: number; conform: number } }) | null
-  previous: (Run & { accessibility: { checked: number; conform: number } | null }) | null
+  latest: (Run & { accessibility: { checked: number; conform: number }; pdfPages: PdfPageTotals }) | null
+  previous: (Run & { accessibility: { checked: number; conform: number } | null; pdfPages: PdfPageTotals }) | null
 }
 
 export const insights = {
   evolution: (analysisId: string, analysisSiteId: string, previous?: string) =>
     request<Evolution>(`/api/analyses/${analysisId}/sites/${analysisSiteId}/evolution${previous ? `?previous=${previous}` : ''}`),
   overview: () => request<{ sites: OverviewSite[] }>('/api/overview'),
+}
+
+/** Pages contenues dans les PDF analysés (les PDF illisibles ou en attente ne comptent pas). */
+export type PdfPageTotals = {
+  pages: number
+  withText: number
+  /** Pages sans texte : le volume à OCRiser. */
+  withoutText: number
+  documents: number
 }

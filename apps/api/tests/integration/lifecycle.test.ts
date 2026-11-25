@@ -120,6 +120,9 @@ describe.skipIf(!reachable)('cycle de vie d’une analyse (base réelle)', () =>
     }
     row = await prisma.analysisSite.findUniqueOrThrow({ where: { id: analysisSite.id } })
     expect(row).toMatchObject({ status: 'completed', pendingPdfCount: 0, pdfTextCount: 1, pdfImageCount: 1 })
+    // Pages des PDF additionnées : 2 PDF de 3 pages, l'un lisible, l'autre scanné.
+    const { pdfPagesBySite } = await import('../../src/modules/analyses/pdf-pages')
+    expect((await pdfPagesBySite([analysisSite.id])).get(analysisSite.id)).toEqual({ pages: 6, withText: 3, withoutText: 3, documents: 2 })
     const checked = await prisma.pdfDocument.findMany({ where: { analysisSiteId: analysisSite.id }, orderBy: { url: 'asc' } })
     expect(checked.map((pdf) => [pdf.tagged, pdf.titleStatus, pdf.lang])).toEqual([
       [true, 'ok', 'fr-FR'],

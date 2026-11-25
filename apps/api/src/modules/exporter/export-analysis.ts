@@ -37,6 +37,9 @@ export async function loadAnalysisExport(analysisId: string): Promise<Buffer> {
       otherCount: row.otherCount,
       errorCount: row.errorCount,
       durationMs: row.durationMs,
+      // Pages additionnées sur les PDF analysés (les PDF illisibles n'ont pas de nombre de pages).
+      pdfPages: row.pdfs.reduce((sum, pdf) => sum + (pdf.pageCount ?? 0), 0),
+      pdfPagesWithoutText: row.pdfs.reduce((sum, pdf) => sum + (pdf.pagesWithoutText ?? 0), 0),
       status: row.status,
     })),
     pages: analysis.sites.flatMap((row) =>

@@ -8,6 +8,7 @@ import { redis } from '../lib/redis'
 import { ApiError, pageWindow } from '../lib/http'
 import { prisma } from '../lib/prisma'
 import { mailQueue } from '../lib/queues'
+import { addPdfPages, EMPTY_PDF_PAGES, pdfPagesBySite } from '../modules/analyses/pdf-pages'
 import { readConfig, startAnalysis } from '../modules/analyses/service'
 import type { Prisma } from '@prisma/client'
 import { a11yCsv, a11yIssues, parseA11yIssues, type A11yIssue } from '../lib/pdf-accessibility'
@@ -109,7 +110,8 @@ export async function registerAnalyses(app: FastifyInstance): Promise<void> {
       },
       { html: 0, pdf: 0, pdfText: 0, pdfImage: 0, pdfPartial: 0, pdfError: 0, errors: 0, sitemap: 0 },
     )
-    return { analysis, totals }
+    const pdfPages = addPdfPages([...(await pdfPagesBySite(sites.map((row) => row.id))).values()])
+    return { analysis, totals, pdfPages }
   })
 
   route.post('/api/analyses/:id/cancel', { schema: { params: idParams } }, async (request) => {
@@ -134,7 +136,8 @@ export async function registerAnalyses(app: FastifyInstance): Promise<void> {
       include: { site: true },
       orderBy: { site: { hostname: 'asc' } },
     })
-    return { sites }
+    const pages = await pdfPagesBySite(sites.map((row) => row.id))
+    return { sites: sites.map((row) => ({ ...row, pdfPages: pages.get(row.id) ?? EMPTY_PDF_PAGES })) }
   })
 
   route.get('/api/analyses/:id/sites/:analysisSiteId/pages', { schema: { params: siteParams, querystring: listQuery } }, async (request) => {

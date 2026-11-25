@@ -15,6 +15,9 @@ export type ExportSite = {
   otherCount: number
   errorCount: number
   durationMs: number | null
+  /** Pages contenues dans les PDF analysés, et celles sans texte (à OCRiser). */
+  pdfPages?: number
+  pdfPagesWithoutText?: number
   status: string
 }
 
@@ -111,12 +114,14 @@ export async function buildWorkbook(data: ExportData): Promise<Buffer> {
     { header: 'Non OCRisés', key: 'pdfImageCount' },
     { header: 'Partiels', key: 'pdfPartialCount' },
     { header: 'Erreurs PDF', key: 'pdfErrorCount' },
+    { header: 'Pages PDF', key: 'pdfPages' },
+    { header: 'Pages PDF sans texte', key: 'pdfPagesWithoutText' },
     { header: 'Autres', key: 'otherCount' },
     { header: 'Erreurs crawl', key: 'errorCount' },
     { header: 'Durée (s)', key: 'duration' },
     { header: 'Statut', key: 'status' },
   ]
-  prepare(summary, [28, 46, 14, 10, 12, 14, 12, 14, 12, 16, 12, 16])
+  prepare(summary, [28, 46, 14, 10, 12, 14, 12, 14, 12, 20, 12, 16, 12, 16])
   for (const site of data.sites) {
     summary.addRow({
       ...site,
