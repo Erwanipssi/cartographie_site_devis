@@ -1,19 +1,23 @@
 import { useQuery } from '@tanstack/react-query'
 import { CalendarClock, Globe, History, LayoutDashboard, Menu, X } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState, type ComponentType } from 'react'
 import { NavLink, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import { AuthGate, LogoutButton } from './components/AuthGate'
 import { api } from './lib/api'
-import { AnalysisPage } from './pages/AnalysisPage'
-import { DashboardPage } from './pages/DashboardPage'
-import { EvolutionPage } from './pages/EvolutionPage'
-import { HistoryPage } from './pages/HistoryPage'
-import { HomePage } from './pages/HomePage'
-import { PdfToFixPage } from './pages/PdfToFixPage'
-import { SchedulesPage } from './pages/SchedulesPage'
-import { SiteDetailPage } from './pages/SiteDetailPage'
+import { Skeleton } from './components/ui'
+
+// Chaque page est chargée à la demande : l'accueil n'attend pas les graphiques des autres pages.
+const page = <K extends string>(load: () => Promise<Record<K, ComponentType>>, name: K) => lazy(() => load().then((module) => ({ default: module[name] })))
+const AnalysisPage = page(() => import('./pages/AnalysisPage'), 'AnalysisPage')
+const DashboardPage = page(() => import('./pages/DashboardPage'), 'DashboardPage')
+const EvolutionPage = page(() => import('./pages/EvolutionPage'), 'EvolutionPage')
+const HistoryPage = page(() => import('./pages/HistoryPage'), 'HistoryPage')
+const HomePage = page(() => import('./pages/HomePage'), 'HomePage')
+const PdfToFixPage = page(() => import('./pages/PdfToFixPage'), 'PdfToFixPage')
+const SchedulesPage = page(() => import('./pages/SchedulesPage'), 'SchedulesPage')
+const SiteDetailPage = page(() => import('./pages/SiteDetailPage'), 'SiteDetailPage')
 
 const NAV = [
   { to: '/', label: 'Sites', icon: Globe, end: true },
@@ -130,9 +134,21 @@ function Shell() {
 
       <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-8">
         <motion.div key={location.pathname} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25, ease: 'easeOut' }}>
-          <Outlet />
+          <Suspense fallback={<PageFallback />}>
+            <Outlet />
+          </Suspense>
         </motion.div>
       </main>
+    </div>
+  )
+}
+
+function PageFallback() {
+  return (
+    <div className="space-y-4">
+      <Skeleton className="h-10 w-64" />
+      <Skeleton className="h-32" />
+      <Skeleton className="h-64" />
     </div>
   )
 }
