@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { ArrowLeft } from 'lucide-react'
 import { Notice } from '../components/Badges'
+import { PageHeader } from '../components/ui'
 import { insights, type EvolutionPdf } from '../lib/api'
 import { formatDate } from '../lib/format'
 
@@ -18,13 +20,15 @@ export function EvolutionPage() {
 
   return (
     <div className="space-y-6">
-      <Link className="text-sm font-medium text-ink-600 hover:text-ink-950" to={`/analyses/${id}`}>
-        Retour à l’analyse
-      </Link>
-      <div>
-        <h1>Évolution · {data?.site ?? '…'}</h1>
-        <p className="mt-1 text-sm text-ink-600">Ce qui a changé sur le site entre deux analyses : documents publiés ou retirés, corrections et régressions.</p>
-      </div>
+      <PageHeader
+        eyebrow={
+          <Link className="inline-flex items-center gap-1 hover:text-ink-950" to={`/analyses/${id}/sites/${analysisSiteId}`}>
+            <ArrowLeft className="h-3.5 w-3.5" aria-hidden /> Retour au site
+          </Link>
+        }
+        title={`Évolution · ${data?.site ?? '…'}`}
+        description="Ce qui a changé sur le site entre deux analyses : documents publiés ou retirés, corrections et régressions."
+      />
 
       {evolution.isError ? <Notice tone="error">{evolution.error instanceof Error ? evolution.error.message : 'Évolution indisponible'}</Notice> : null}
 

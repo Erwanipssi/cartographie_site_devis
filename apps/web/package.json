@@ -12,9 +12,13 @@
   "dependencies": {
     "@cartographie/shared": "workspace:*",
     "@tanstack/react-query": "^5.90.2",
+    "lucide-react": "^1.80.0",
+    "motion": "^14.14.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "react-router-dom": "^7.9.1"
+    "react-router-dom": "^7.9.1",
+    "recharts": "^3.11.1",
+    "sonner": "^2.0.8"
   },
   "devDependencies": {
     "@types/react": "^19.1.13",

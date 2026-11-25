@@ -1,3 +1,4 @@
+import { LogOut } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState, type ReactNode } from 'react'
 import { auth, AUTH_REQUIRED_EVENT } from '../lib/api'
@@ -84,7 +85,8 @@ export function LogoutButton() {
   })
   if (!session.data?.required) return null
   return (
-    <button type="button" className="rounded-md px-3 py-1.5 text-sm font-medium text-ink-600 transition-colors hover:text-ink-950" onClick={() => logout.mutate()}>
+    <button type="button" className="nav-item w-full" onClick={() => logout.mutate()}>
+      <LogOut className="h-4 w-4" aria-hidden />
       Se déconnecter
     </button>
   )

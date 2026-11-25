@@ -352,3 +352,12 @@ export type PdfPageTotals = {
   withoutText: number
   documents: number
 }
+
+export type TreeStats = { pages: number; pdfs: number; pdfPages: number; toFix: number; errors: number }
+export type TreePdf = { url: string; name: string; ocrStatus: OcrStatus; pageCount: number | null; httpStatus: number | null }
+/** Nœud de l'arborescence : un chemin du site, éventuellement une page, avec ses PDF et les totaux de sa branche. */
+export type TreeNode = { name: string; path: string; url: string | null; httpStatus: number | null; pdfs: TreePdf[]; children: TreeNode[]; stats: TreeStats }
+
+export function siteTree(analysisId: string, analysisSiteId: string): Promise<{ tree: TreeNode }> {
+  return request<{ tree: TreeNode }>(`/api/analyses/${analysisId}/sites/${analysisSiteId}/tree`)
+}

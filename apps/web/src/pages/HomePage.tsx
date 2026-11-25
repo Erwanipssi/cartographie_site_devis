@@ -1,12 +1,15 @@
 import { crawlConfigSchema, type CrawlConfig } from '@cartographie/shared'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
+import { Globe, Loader2, Play, Plus, Trash2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { toast } from 'sonner'
 import { AdvancedSettings } from '../components/AdvancedSettings'
 import { Notice } from '../components/Badges'
 import { RecipientPicker } from '../components/RecipientPicker'
 import { looksLikeUrl, newRow, UrlListInput, type UrlRow } from '../components/UrlListInput'
 import { api } from '../lib/api'
+import { EmptyState, PageHeader } from '../components/ui'
 
 // Sitemap : rapide, on lit le sitemap et on n'ouvre que ses pages pour y relever les PDF.
 // Crawl complet : suit tous les liens, plus lent, utile quand le site n'a pas de sitemap fiable.
@@ -36,7 +39,6 @@ export function HomePage() {
   const scope = scopeOf(config)
   const [emailOnComplete, setEmailOnComplete] = useState(false)
   const [recipientIds, setRecipientIds] = useState<string[]>([])
-  const [feedback, setFeedback] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const add = useMutation({
@@ -56,10 +58,9 @@ export function HomePage() {
       const message = parts.join(' · ') || 'Aucune URL nouvelle.'
       const nothingAdded = result.created.length + result.restored.length === 0
       if (result.rejected.length && nothingAdded) {
-        setFeedback(null)
         setError(`${message} — voir le détail sous chaque champ.`)
       } else {
-        setFeedback(message)
+        toast.success(message)
         setError(null)
       }
     },
@@ -72,7 +73,10 @@ export function HomePage() {
   })
   const remove = useMutation({
     mutationFn: (id: string) => api.deleteSite(id),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['sites'] }),
+    onSuccess: () => {
+      toast('Site retiré')
+      void queryClient.invalidateQueries({ queryKey: ['sites'] })
+    },
   })
   const launch = useMutation({
     mutationFn: () =>
@@ -91,12 +95,12 @@ export function HomePage() {
   const validCount = filled.filter(looksLikeUrl).length
 
   return (
-    <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px]">
+    <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_320px]">
       <section className="space-y-6">
-        <div>
-          <h1 className="text-2xl">Sites à cartographier</h1>
-          <p className="mt-1 max-w-2xl text-sm text-ink-600">Ajoutez les sites un par un. L’analyse compte les pages HTML, les PDF, et indique si chaque PDF contient une couche de texte exploitable.</p>
-        </div>
+        <PageHeader
+          title="Sites à cartographier"
+          description="Ajoutez les sites un par un. L’analyse compte les pages HTML, les PDF, et indique si chaque PDF contient une couche de texte exploitable."
+        />
         {health.data && !health.data.worker ? <Notice tone="info">Le worker est arrêté. Lancez <code>pnpm dev:worker</code> pour exécuter les analyses.</Notice> : null}
         {health.data && !health.data.db ? <Notice tone="error">Base PostgreSQL indisponible. Lancez <code>pnpm infra</code>.</Notice> : null}
 
@@ -105,7 +109,6 @@ export function HomePage() {
           onSubmit={(event) => {
             event.preventDefault()
             setError(null)
-            setFeedback(null)
             if (!filled.length) {
               setError('Saisissez au moins une URL.')
               return
@@ -129,12 +132,12 @@ export function HomePage() {
                 </button>
               ) : null}
               <button className="btn-primary" type="submit" disabled={add.isPending || filled.length === 0}>
+                {add.isPending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Plus className="h-4 w-4" aria-hidden />}
                 {add.isPending ? 'Ajout…' : filled.length > 1 ? `Ajouter les ${filled.length} sites` : 'Ajouter le site'}
               </button>
             </div>
           </div>
         </form>
-        {feedback ? <Notice tone="ok">{feedback}</Notice> : null}
         {error ? <Notice tone="error">{error}</Notice> : null}
 
         <div className="space-y-3">
@@ -143,12 +146,14 @@ export function HomePage() {
             <span className="rounded-md border border-line bg-card px-1.5 text-xs font-medium tabular-nums text-ink-600">{list.length}</span>
           </div>
           {list.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-line px-6 py-10 text-center text-sm text-ink-600">Aucun site pour le moment. Ajoutez une première URL ci-dessus.</div>
+            <EmptyState icon={Globe} title="Aucun site pour le moment">
+              Ajoutez une première URL ci-dessus.
+            </EmptyState>
           ) : (
             <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-card">
               {list.map((site) => (
                 <li key={site.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 transition hover:bg-paper">
-                  <div className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-line bg-paper text-xs font-medium uppercase text-ink-600">{site.hostname.replace(/^www\./, '').charAt(0)}</div>
+                  <div className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-ink-950 text-xs font-semibold uppercase text-white">{site.hostname.replace(/^www\./, '').charAt(0)}</div>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-medium">{site.hostname}</div>
                     <div className="truncate font-mono text-xs text-ink-600">{site.normalizedUrl}</div>
@@ -157,8 +162,8 @@ export function HomePage() {
                     <input type="checkbox" className="accent-ink-950" checked={site.includeSubdomains} onChange={(event) => update.mutate({ id: site.id, includeSubdomains: event.target.checked })} />
                     Sous-domaines
                   </label>
-                  <button type="button" className="rounded-md px-2 py-1 text-sm text-ink-600 transition-colors hover:bg-red-50 hover:text-clay" onClick={() => remove.mutate(site.id)}>
-                    Retirer
+                  <button type="button" className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-ink-600 transition-colors hover:bg-red-50 hover:text-clay" onClick={() => remove.mutate(site.id)}>
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden /> Retirer
                   </button>
                 </li>
               ))}
@@ -167,7 +172,7 @@ export function HomePage() {
         </div>
       </section>
 
-      <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
+      <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start">
         <div className="card space-y-3">
           <h2 className="text-sm">Mode d’analyse</h2>
           <div className="grid grid-cols-2 gap-1 rounded-md border border-line bg-paper p-1" role="radiogroup" aria-label="Mode d’analyse">
@@ -206,6 +211,7 @@ export function HomePage() {
               launch.mutate()
             }}
           >
+            {launch.isPending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Play className="h-4 w-4" aria-hidden />}
             Lancer l’analyse
           </button>
           <p className="text-xs text-ink-600">

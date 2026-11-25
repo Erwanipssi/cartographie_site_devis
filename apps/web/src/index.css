@@ -58,3 +58,29 @@
   }
 }
 
+
+@layer components {
+  .skeleton {
+    background: linear-gradient(90deg, #f4f4f5 0%, #e9e9ec 50%, #f4f4f5 100%);
+    background-size: 200% 100%;
+    animation: skeleton 1.4s ease-in-out infinite;
+  }
+  .nav-item {
+    @apply flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium text-ink-600 transition-colors hover:bg-paper hover:text-ink-950;
+  }
+  .nav-item.active {
+    @apply bg-paper text-ink-950 ring-1 ring-line;
+  }
+  .link {
+    @apply font-medium text-accent underline-offset-2 hover:underline;
+  }
+}
+
+@keyframes skeleton {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
+}

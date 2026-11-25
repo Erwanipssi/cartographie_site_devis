@@ -21,7 +21,7 @@ export default {
         moss: '#f0fdf4',
         clay: '#dc2626',
         sand: '#fef7ec',
-        amber: '#b45309',
+        amber: { DEFAULT: '#b45309', 50: '#fffbeb', 200: '#fde68a', 300: '#fcd34d', 500: '#f59e0b' },
       },
       fontFamily: {
         display: ['Geist', 'system-ui', 'sans-serif'],

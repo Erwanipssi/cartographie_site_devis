@@ -14,6 +14,7 @@ import type { Prisma } from '@prisma/client'
 import { a11yCsv, a11yIssues, parseA11yIssues, type A11yIssue } from '../lib/pdf-accessibility'
 import { documentName, parseTriageStatuses, TRIAGE_STATUSES, triageCsv, type TriageStatus } from '../lib/pdf-triage'
 import { buildSitemapXml } from '../lib/sitemap'
+import { buildSiteTree } from '../lib/site-tree'
 import { loadAnalysisExport } from '../modules/exporter/export-analysis'
 
 const idParams = z.object({ id: z.string().min(1) })
@@ -179,6 +180,19 @@ export async function registerAnalyses(app: FastifyInstance): Promise<void> {
       }),
     ])
     return { items, total, page: window.page, pageSize: window.pageSize }
+  })
+
+  // Arborescence du site : pages par chemin, PDF rattachés à leur page, totaux par branche.
+  route.get('/api/analyses/:id/sites/:analysisSiteId/tree', { schema: { params: siteParams } }, async (request) => {
+    await assertSite(request.params.id, request.params.analysisSiteId)
+    const where = { analysisSiteId: request.params.analysisSiteId }
+    const [pages, pdfs] = await Promise.all([
+      prisma.page.findMany({ where, select: { url: true, httpStatus: true } }),
+      prisma.pdfDocument.findMany({ where, select: { url: true, httpStatus: true, parentUrl: true, ocrStatus: true, pageCount: true, pagesWithoutText: true } }),
+    ])
+    return {
+      tree: buildSiteTree([...pages.map((page) => ({ kind: 'page' as const, ...page })), ...pdfs.map((pdf) => ({ kind: 'pdf' as const, ...pdf }))]),
+    }
   })
 
   route.get('/api/analyses/:id/sites/:analysisSiteId/errors', { schema: { params: siteParams, querystring: listQuery } }, async (request) => {

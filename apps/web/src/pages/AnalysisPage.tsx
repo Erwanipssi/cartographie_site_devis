@@ -1,10 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ArrowRight, Ban, Download, FileText, FileWarning, Files, Globe, Layers, ListTree, Loader2, Mail, Map as MapIcon, TrendingUp, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
+import { toast } from 'sonner'
 import { Notice, StatusBadge } from '../components/Badges'
 import { RecipientPicker } from '../components/RecipientPicker'
+import { integer, OCR_COLORS, ocrSegments, PageHeader, ProgressBar, Reveal, Skeleton, StackedBar, StatCard } from '../components/ui'
 import { api, exportUrl, sitemapUrl, type AnalysisSite, type PdfPageTotals } from '../lib/api'
-import { analyzedPdfCount, formatDuration } from '../lib/format'
+import { analyzedPdfCount, formatDate, formatDuration } from '../lib/format'
 import { useAnalysisStream } from '../lib/useAnalysisStream'
 
 export function AnalysisPage() {
@@ -29,200 +33,225 @@ export function AnalysisPage() {
   useAnalysisStream(id, Boolean(running))
   const [mailOpen, setMailOpen] = useState(false)
   const [recipientIds, setRecipientIds] = useState<string[]>([])
-  const [mailMessage, setMailMessage] = useState<string | null>(null)
 
   const cancel = useMutation({
     mutationFn: () => api.cancelAnalysis(id),
     onSuccess: async () => {
+      toast('Analyse annulée')
       await queryClient.invalidateQueries({ queryKey: ['analysis', id] })
       await queryClient.invalidateQueries({ queryKey: ['analysis-sites', id] })
     },
+    onError: (reason) => toast.error(reason instanceof Error ? reason.message : 'Annulation impossible'),
   })
   const send = useMutation({
     mutationFn: () => api.sendMail(id, recipientIds),
     onSuccess: async () => {
-      setMailMessage('Envoi placé dans la file.')
+      toast.success('Rapport placé dans la file d’envoi')
+      setMailOpen(false)
       await queryClient.invalidateQueries({ queryKey: ['deliveries', id] })
     },
-    onError: (reason) => setMailMessage(reason instanceof Error ? reason.message : 'Envoi impossible'),
+    onError: (reason) => toast.error(reason instanceof Error ? reason.message : 'Envoi impossible'),
   })
 
-  if (analysis.isLoading) return <p>Chargement…</p>
+  if (analysis.isLoading) return <AnalysisSkeleton />
   if (analysis.isError || !analysis.data) return <Notice tone="error">Analyse introuvable.</Notice>
   const rows = sites.data?.sites ?? []
-  const totals = analysis.data.totals
+  const { totals, pdfPages } = analysis.data
+  const info = analysis.data.analysis
+  const toFix = (totals.pdfImage ?? 0) + (totals.pdfPartial ?? 0)
+  const analyzed = (totals.pdfText ?? 0) + toFix + (totals.pdfError ?? 0)
+  const title = rows.length === 1 ? rows[0]!.site.hostname : rows.length > 1 ? `${rows.length} sites` : `Analyse ${id.slice(0, 8)}`
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-sm text-ink-600">Analyse</p>
-          <h1 className="break-all font-mono text-2xl">{id.slice(0, 8)}</h1>
-        </div>
-        <StatusBadge value={analysis.data.analysis.status} />
-      </div>
-      {analysis.data.analysis.failureReason ? <Notice tone="error">{analysis.data.analysis.failureReason}</Notice> : null}
-      <div className="grid gap-3 sm:grid-cols-5">
-        <Metric label="URL du sitemap" value={totals.sitemap ?? 0} />
-        <Metric label="Pages HTML" value={totals.html ?? 0} />
-        <Metric label="PDF" value={totals.pdf ?? 0} />
-        <Metric label="PDF texte" value={totals.pdfText ?? 0} />
-        <Metric label="Erreurs" value={totals.errors ?? 0} />
-      </div>
-      <PdfPagesSection totals={analysis.data.pdfPages} pdfCount={totals.pdf ?? 0} />
-      {(totals.pdfImage ?? 0) + (totals.pdfPartial ?? 0) + (totals.pdfError ?? 0) > 0 ? (
-        <Link
-          to={`/analyses/${id}/pdf-a-traiter`}
-          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50/60 px-5 py-4 transition-colors hover:border-red-300 hover:bg-red-50"
-        >
-          <div>
-            <p className="font-semibold text-ink-950">
-              {(totals.pdfImage ?? 0) + (totals.pdfPartial ?? 0)} PDF à traiter
-              {(totals.pdfError ?? 0) > 0 ? <span className="font-normal text-ink-600"> · {totals.pdfError} illisible{(totals.pdfError ?? 0) > 1 ? 's' : ''}</span> : null}
-            </p>
-            <p className="text-sm text-ink-600">
-              {totals.pdfImage ?? 0} sans aucune page lisible, {totals.pdfPartial ?? 0} partiellement lisibles
-            </p>
-          </div>
-          <span className="text-sm font-medium text-ink-950">Voir la liste →</span>
-        </Link>
-      ) : null}
-      <div className="grid gap-3 md:grid-cols-2">
-        {rows.map((row) => (
-          <ProgressCard key={row.id} row={row} analysisId={id} />
-        ))}
-      </div>
-      <div className="table-wrap">
-        <table className="grid-table">
-          <thead>
-            <tr>
-              <th>Site</th>
-              <th>Sitemap</th>
-              <th>Pages</th>
-              <th>PDF</th>
-              <th>Pages PDF</th>
-              <th>Texte</th>
-              <th>Image</th>
-              <th>Partiel</th>
-              <th>Erreur PDF</th>
-              <th>Durée</th>
-              <th>Statut</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.id}>
-                <td>
-                  <Link className="font-medium text-accent hover:underline underline-offset-2" to={`/analyses/${id}/sites/${row.id}`}>
-                    {row.site.hostname}
-                  </Link>
-                </td>
-                <td>{row.sitemapUrlCount ?? '—'}</td>
-                <td>{row.htmlCount}</td>
-                <td>{row.pdfCount}</td>
-                <td className="tabular-nums">{row.pdfPages.pages.toLocaleString('fr-FR')}</td>
-                <td>{row.pdfTextCount}</td>
-                <td>{row.pdfImageCount}</td>
-                <td>{row.pdfPartialCount}</td>
-                <td>{row.pdfErrorCount}</td>
-                <td>{formatDuration(row.durationMs)}</td>
-                <td>
-                  <StatusBadge value={row.status} />
-                </td>
-                <td className="whitespace-nowrap text-right">
-                  {row.status === 'completed' ? (
-                    <>
-                      <Link className="font-medium text-accent underline-offset-2 hover:underline" to={`/analyses/${id}/sites/${row.id}/evolution`} title="Changements depuis l’analyse précédente">
-                        Évolution
-                      </Link>
-                      <span className="text-ink-400"> · </span>
-                    </>
-                  ) : null}
-                  <a className="font-medium text-accent underline-offset-2 hover:underline" href={sitemapUrl(id, row.id)} title="URL découvertes, au format sitemap.xml">
-                    sitemap.xml
-                  </a>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        <a className="btn-ghost" href={exportUrl(id)}>
-          Télécharger Excel
-        </a>
-        {running ? (
-          <button type="button" className="btn-ghost" onClick={() => cancel.mutate()} disabled={cancel.isPending}>
-            Annuler
-          </button>
-        ) : (
-          <button type="button" className="btn-primary" onClick={() => setMailOpen((open) => !open)}>
-            Envoyer par mail
-          </button>
-        )}
-      </div>
+      <PageHeader
+        eyebrow={
+          <>
+            <span>Analyse du {formatDate(info.startedAt ?? info.createdAt)}</span>
+            <span className="text-ink-400">·</span>
+            <span>{info.config.mode === 'sitemap' ? 'mode sitemap' : 'crawl complet'}</span>
+            {info.trigger === 'scheduled' ? <span className="rounded bg-paper px-1.5 text-xs ring-1 ring-line">planifiée</span> : null}
+          </>
+        }
+        title={
+          <span className="flex items-center gap-3">
+            {title} <StatusBadge value={info.status} />
+          </span>
+        }
+        actions={
+          <>
+            <a className="btn-ghost" href={exportUrl(id)}>
+              <Download className="h-4 w-4" aria-hidden /> Excel
+            </a>
+            {running ? (
+              <button type="button" className="btn-ghost" onClick={() => cancel.mutate()} disabled={cancel.isPending}>
+                <Ban className="h-4 w-4" aria-hidden /> Annuler
+              </button>
+            ) : (
+              <button type="button" className="btn-primary" onClick={() => setMailOpen((open) => !open)}>
+                <Mail className="h-4 w-4" aria-hidden /> Envoyer par mail
+              </button>
+            )}
+          </>
+        }
+      />
+      {info.failureReason ? <Notice tone="error">{info.failureReason}</Notice> : null}
+
       {mailOpen ? (
-        <div className="card space-y-3">
-          <h2 className="text-xl">Destinataires</h2>
+        <Reveal className="card space-y-3">
+          <h2 className="text-sm">Destinataires du rapport</h2>
           {!health.data?.smtp ? <Notice tone="info">SMTP non configuré dans apps/api/.env.</Notice> : null}
           <RecipientPicker selected={recipientIds} onChange={setRecipientIds} />
           <button type="button" className="btn-primary" disabled={!health.data?.smtp || recipientIds.length === 0 || send.isPending} onClick={() => send.mutate()}>
-            Envoyer maintenant
+            {send.isPending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Mail className="h-4 w-4" aria-hidden />} Envoyer maintenant
           </button>
-          {mailMessage ? <p className="text-sm">{mailMessage}</p> : null}
+        </Reveal>
+      ) : null}
+
+      {running ? (
+        <div className="flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50/60 px-4 py-3 text-sm text-ink-800">
+          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent" aria-hidden />
+          <span>
+            Analyse en cours : les chiffres se mettent à jour en direct.
+            {totals.pdf ? ` ${integer.format(analyzed)} PDF analysés sur ${integer.format(totals.pdf)}.` : ''}
+          </span>
         </div>
       ) : null}
-      {deliveries.data && deliveries.data.deliveries.length > 0 ? (
-        <div className="table-wrap">
-          <table className="grid-table">
-            <thead>
-              <tr>
-                <th>Envoi</th>
-                <th>Destinataires</th>
-                <th>Statut</th>
-              <th />
-                <th>Détail</th>
-              </tr>
-            </thead>
-            <tbody>
-              {deliveries.data.deliveries.map((delivery) => (
-                <tr key={delivery.id}>
-                  <td>{delivery.trigger}</td>
-                  <td>{delivery.recipients.join(', ')}</td>
-                  <td>{delivery.status}</td>
-                  <td>{delivery.error ?? '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <StatCard icon={MapIcon} label="URL du sitemap" value={totals.sitemap ?? 0} />
+        <StatCard icon={Globe} label="Pages HTML" value={totals.html ?? 0} />
+        <StatCard icon={Files} label="PDF" value={totals.pdf ?? 0} hint={`${integer.format(analyzed)} analysés`} />
+        <StatCard icon={Layers} label="Pages PDF" value={pdfPages.pages} hint={pdfPages.documents ? `${integer.format(Math.round(pdfPages.pages / pdfPages.documents))} par PDF en moyenne` : undefined} />
+        <StatCard icon={FileWarning} label="PDF à traiter" value={toFix} tone={toFix > 0 ? 'warn' : 'good'} to={`/analyses/${id}/pdf-a-traiter`} hint={toFix > 0 ? 'Voir la liste' : 'Rien à faire'} />
+        <StatCard icon={TriangleAlert} label="Erreurs" value={totals.errors ?? 0} tone={(totals.errors ?? 0) > 0 ? 'bad' : 'neutral'} />
+      </div>
+
+      {(totals.pdf ?? 0) > 0 ? (
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+          <OcrDonut text={totals.pdfText ?? 0} partial={totals.pdfPartial ?? 0} image={totals.pdfImage ?? 0} error={totals.pdfError ?? 0} />
+          <PdfPagesCard totals={pdfPages} pdfCount={totals.pdf ?? 0} analysisId={id} toFix={toFix} />
         </div>
+      ) : null}
+
+      <section className="space-y-3">
+        <h2 className="text-sm">{rows.length > 1 ? 'Sites analysés' : 'Détail du site'}</h2>
+        <div className="grid gap-3 md:grid-cols-2">
+          {sites.isLoading
+            ? Array.from({ length: 2 }, (_, index) => <Skeleton key={index} className="h-44" />)
+            : rows.map((row, index) => (
+                <Reveal key={row.id} delay={index * 0.04}>
+                  <SiteCard row={row} analysisId={id} />
+                </Reveal>
+              ))}
+        </div>
+      </section>
+
+      {deliveries.data && deliveries.data.deliveries.length > 0 ? (
+        <section className="space-y-3">
+          <h2 className="text-sm">Envois du rapport</h2>
+          <div className="table-wrap">
+            <table className="grid-table">
+              <thead>
+                <tr>
+                  <th>Envoi</th>
+                  <th>Destinataires</th>
+                  <th>Statut</th>
+                  <th>Détail</th>
+                </tr>
+              </thead>
+              <tbody>
+                {deliveries.data.deliveries.map((delivery) => (
+                  <tr key={delivery.id}>
+                    <td>{delivery.trigger}</td>
+                    <td>{delivery.recipients.join(', ')}</td>
+                    <td>{delivery.status}</td>
+                    <td>{delivery.error ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
       ) : null}
     </div>
   )
 }
 
-const integer = new Intl.NumberFormat('fr-FR')
-
-/** Pages contenues dans les PDF, additionnées sur tous les PDF analysés, avec la part sans texte (à OCRiser). */
-function PdfPagesSection({ totals, pdfCount }: { totals: PdfPageTotals; pdfCount: number }) {
-  if (pdfCount === 0) return null
-  const textShare = totals.pages > 0 ? (totals.withText / totals.pages) * 100 : 0
-  const average = totals.documents > 0 ? Math.round(totals.pages / totals.documents) : 0
+function AnalysisSkeleton() {
   return (
-    <section className="card space-y-3" aria-labelledby="pdf-pages-title">
+    <div className="space-y-6">
+      <Skeleton className="h-12 w-72" />
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        {Array.from({ length: 6 }, (_, index) => (
+          <Skeleton key={index} className="h-[104px]" />
+        ))}
+      </div>
+      <Skeleton className="h-56" />
+    </div>
+  )
+}
+
+/** Anneau de la couche texte : la part de PDF exploitables, lisible d'un coup d'œil. */
+function OcrDonut({ text, partial, image, error }: { text: number; partial: number; image: number; error: number }) {
+  const segments = ocrSegments({ text, partial, image, error })
+  const filled = segments.filter((segment) => segment.value > 0)
+  const total = text + partial + image + error
+  const share = total > 0 ? Math.round((text / total) * 100) : 0
+  return (
+    <section className="card">
+      <h2 className="text-sm">Couche texte des PDF</h2>
+      <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-4">
+        <div className="relative h-36 w-36 shrink-0">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie data={filled} dataKey="value" nameKey="label" innerRadius="70%" outerRadius="100%" paddingAngle={1.5} stroke="none" startAngle={90} endAngle={-270}>
+                {filled.map((segment) => (
+                  <Cell key={segment.key} fill={segment.color} />
+                ))}
+              </Pie>
+              <Tooltip contentStyle={{ borderRadius: 8, border: '1px solid #e4e4e7', fontSize: 12 }} formatter={(value, name) => [integer.format(Number(value)), String(name)]} />
+            </PieChart>
+          </ResponsiveContainer>
+          <div className="pointer-events-none absolute inset-0 grid place-items-center text-center">
+            <div>
+              <p className="text-2xl font-semibold tabular-nums tracking-tight">{share} %</p>
+              <p className="text-[11px] text-ink-600">avec texte</p>
+            </div>
+          </div>
+        </div>
+        <ul className="min-w-[200px] flex-1 space-y-1.5 text-sm">
+          {segments.map((segment) => (
+            <li key={segment.key} className="flex items-center justify-between gap-3">
+              <span className="flex items-center gap-2 whitespace-nowrap text-ink-800">
+                <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: segment.color }} aria-hidden />
+                {segment.label}
+              </span>
+              <span className="whitespace-nowrap tabular-nums">
+                <span className="font-medium">{integer.format(segment.value)}</span>
+                <span className="ml-1.5 text-xs text-ink-600">{total ? Math.round((segment.value / total) * 100) : 0} %</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  )
+}
+
+/** Pages contenues dans les PDF, avec la part sans texte (le volume à OCRiser). */
+function PdfPagesCard({ totals, pdfCount, analysisId, toFix }: { totals: PdfPageTotals; pdfCount: number; analysisId: string; toFix: number }) {
+  return (
+    <section className="card flex flex-col gap-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 id="pdf-pages-title" className="text-sm">
-          Pages dans les PDF
-        </h2>
+        <h2 className="text-sm">Pages dans les PDF</h2>
         <p className="text-xs text-ink-600">
           {integer.format(totals.documents)} PDF comptés{totals.documents < pdfCount ? ` sur ${integer.format(pdfCount)} (illisibles ou en cours exclus)` : ''}
-          {average ? ` · ${integer.format(average)} pages en moyenne` : ''}
         </p>
       </div>
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-3 gap-3">
         <div>
-          <p className="text-xs font-medium text-ink-600">Total des pages</p>
+          <p className="text-xs font-medium text-ink-600">Total</p>
           <p className="text-2xl font-semibold tabular-nums tracking-tight">{integer.format(totals.pages)}</p>
         </div>
         <div>
@@ -230,48 +259,108 @@ function PdfPagesSection({ totals, pdfCount }: { totals: PdfPageTotals; pdfCount
           <p className="text-2xl font-semibold tabular-nums tracking-tight text-pine">{integer.format(totals.withText)}</p>
         </div>
         <div>
-          <p className="text-xs font-medium text-ink-600">Sans texte (à OCRiser)</p>
+          <p className="text-xs font-medium text-ink-600">À OCRiser</p>
           <p className={`text-2xl font-semibold tabular-nums tracking-tight ${totals.withoutText > 0 ? 'text-clay' : ''}`}>{integer.format(totals.withoutText)}</p>
         </div>
       </div>
-      {totals.pages > 0 ? (
-        <div
-          className="flex h-2 overflow-hidden rounded-full bg-red-100"
-          role="img"
-          aria-label={`${Math.round(textShare)} % des pages PDF ont du texte`}
-        >
-          <div className="bg-pine" style={{ width: `${textShare}%` }} />
-        </div>
+      <StackedBar
+        segments={[
+          { key: 'with', label: 'Pages avec texte', value: totals.withText, color: OCR_COLORS.text },
+          { key: 'without', label: 'Pages sans texte', value: totals.withoutText, color: OCR_COLORS.image },
+        ]}
+      />
+      {toFix > 0 ? (
+        <Link to={`/analyses/${analysisId}/pdf-a-traiter`} className="group mt-auto flex items-center justify-between rounded-md border border-amber-200 bg-amber-50/60 px-3 py-2 text-sm transition-colors hover:border-amber-300">
+          <span>
+            <span className="font-semibold">{integer.format(toFix)} PDF</span> à traiter pour rendre ces pages lisibles
+          </span>
+          <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
+        </Link>
       ) : null}
     </section>
   )
 }
 
-function Metric({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="card">
-      <p className="text-xs uppercase tracking-wide text-ink-600">{label}</p>
-      <p className="text-2xl font-semibold tabular-nums tracking-tight">{value}</p>
-    </div>
-  )
-}
-
-function ProgressCard({ row, analysisId }: { row: AnalysisSite; analysisId: string }) {
+function SiteCard({ row, analysisId }: { row: AnalysisSite; analysisId: string }) {
   const analyzed = analyzedPdfCount(row)
+  const active = row.status === 'crawling' || row.status === 'analyzing_pdfs' || row.status === 'pending'
+  const base = `/analyses/${analysisId}/sites/${row.id}`
+  const figures: Array<[string, number]> = [
+    ['Pages', row.htmlCount],
+    ['PDF', row.pdfCount],
+    ['Pages PDF', row.pdfPages.pages],
+    ['Erreurs', row.errorCount],
+  ]
   return (
-    <Link to={`/analyses/${analysisId}/sites/${row.id}`} className="card block transition-colors hover:border-ink-400">
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="text-base">{row.site.hostname}</h2>
+    <article className="card flex h-full flex-col gap-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <Link to={base} className="block truncate font-semibold hover:text-accent">
+            {row.site.hostname}
+          </Link>
+          <p className="text-xs text-ink-600">{formatDuration(row.durationMs)}</p>
+        </div>
         <StatusBadge value={row.status} />
       </div>
-      <p className="mt-2 text-sm text-ink-600">
-        {row.sitemapUrlCount != null ? `${row.sitemapUrlCount} URL dans le sitemap · ` : ''}{row.htmlCount} pages · {row.pdfCount} PDF découverts · {analyzed} PDF analysés · {row.errorCount} erreurs
-      </p>
-      {row.sitemapSource && row.sitemapSource !== 'live' ? (
-        <p className={`mt-2 text-xs ${SITEMAP_SOURCES[row.sitemapSource].tone}`}>{SITEMAP_SOURCES[row.sitemapSource].text}</p>
+
+      <dl className="grid grid-cols-4 gap-2 text-center">
+        {figures.map(([label, value]) => (
+          <div key={label} className="rounded-md bg-paper px-2 py-2 ring-1 ring-inset ring-line">
+            <dt className="text-[11px] text-ink-600">{label}</dt>
+            <dd className="font-semibold tabular-nums">{integer.format(value)}</dd>
+          </div>
+        ))}
+      </dl>
+
+      {active ? (
+        <div className="space-y-2 text-xs text-ink-600">
+          {row.sitemapUrlCount ? (
+            <div className="space-y-1">
+              <div className="flex justify-between">
+                <span>Pages ouvertes</span>
+                <span className="tabular-nums">
+                  {integer.format(row.htmlCount + row.errorCount)} / {integer.format(row.sitemapUrlCount)}
+                </span>
+              </div>
+              <ProgressBar value={row.htmlCount + row.errorCount} max={row.sitemapUrlCount} />
+            </div>
+          ) : null}
+          {row.pdfCount > 0 ? (
+            <div className="space-y-1">
+              <div className="flex justify-between">
+                <span>PDF analysés</span>
+                <span className="tabular-nums">
+                  {integer.format(analyzed)} / {integer.format(row.pdfCount)}
+                </span>
+              </div>
+              <ProgressBar value={analyzed} max={row.pdfCount} tone="good" />
+            </div>
+          ) : null}
+        </div>
+      ) : row.pdfCount > 0 ? (
+        <StackedBar height="h-2" legend={false} segments={ocrSegments({ text: row.pdfTextCount, partial: row.pdfPartialCount, image: row.pdfImageCount, error: row.pdfErrorCount, pending: row.pendingPdfCount })} />
       ) : null}
-      {row.errorMessage ? <p className="mt-1 text-sm text-clay">{row.errorMessage}</p> : null}
-    </Link>
+
+      {row.sitemapSource && row.sitemapSource !== 'live' ? <p className={`text-xs ${SITEMAP_SOURCES[row.sitemapSource].tone}`}>{SITEMAP_SOURCES[row.sitemapSource].text}</p> : null}
+      {row.errorMessage ? <p className="text-xs text-clay">{row.errorMessage}</p> : null}
+
+      <div className="mt-auto flex flex-wrap gap-2 border-t border-line pt-3">
+        <Link to={`${base}?tab=tree`} className="btn-ghost h-8 px-2.5 text-xs">
+          <ListTree className="h-3.5 w-3.5" aria-hidden /> Arborescence
+        </Link>
+        <Link to={`${base}?tab=pdfs`} className="btn-ghost h-8 px-2.5 text-xs">
+          <FileText className="h-3.5 w-3.5" aria-hidden /> PDF
+        </Link>
+        {row.status === 'completed' ? (
+          <Link to={`${base}/evolution`} className="btn-ghost h-8 px-2.5 text-xs" title="Changements depuis l’analyse précédente">
+            <TrendingUp className="h-3.5 w-3.5" aria-hidden /> Évolution
+          </Link>
+        ) : null}
+        <a href={sitemapUrl(analysisId, row.id)} className="btn-ghost h-8 px-2.5 text-xs" title="URL découvertes, au format sitemap.xml">
+          <Download className="h-3.5 w-3.5" aria-hidden /> sitemap.xml
+        </a>
+      </div>
+    </article>
   )
 }
 

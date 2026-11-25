@@ -1,17 +1,24 @@
 import { useQuery } from '@tanstack/react-query'
+import { Download, History } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Notice, StatusBadge } from '../components/Badges'
 import { api, exportUrl } from '../lib/api'
 import { formatDate } from '../lib/format'
+import { EmptyState, PageHeader, Skeleton } from '../components/ui'
 
 export function HistoryPage() {
   const history = useQuery({ queryKey: ['analyses'], queryFn: () => api.analyses(1) })
-  if (history.isLoading) return <p>Chargement…</p>
+  if (history.isLoading) return <Skeleton className="h-80" />
   if (history.isError) return <Notice tone="error">Historique indisponible.</Notice>
   const rows = history.data?.analyses ?? []
   return (
     <div className="space-y-4">
-      <h1>Historique</h1>
+      <PageHeader title="Historique" description="Toutes les analyses lancées, manuelles ou planifiées." />
+      {rows.length === 0 ? (
+        <EmptyState icon={History} title="Aucune analyse">
+          Les analyses lancées apparaîtront ici.
+        </EmptyState>
+      ) : (
       <div className="table-wrap">
         <table className="grid-table">
           <thead>
@@ -25,7 +32,7 @@ export function HistoryPage() {
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.id}>
+              <tr key={row.id} className="hover:bg-paper">
                 <td>{formatDate(row.createdAt)}</td>
                 <td>{row.trigger === 'scheduled' ? 'Planifié' : 'Manuel'}</td>
                 <td>{row.siteCount}</td>
@@ -37,20 +44,16 @@ export function HistoryPage() {
                   <Link className="font-medium text-accent hover:underline underline-offset-2" to={`/analyses/${row.id}`}>
                     Ouvrir
                   </Link>
-                  <a className="font-semibold text-ink-800" href={exportUrl(row.id)}>
-                    Excel
+                  <a className="inline-flex items-center gap-1 font-medium text-ink-800 hover:text-ink-950" href={exportUrl(row.id)}>
+                    <Download className="h-3.5 w-3.5" aria-hidden /> Excel
                   </a>
                 </td>
               </tr>
             ))}
-            {rows.length === 0 ? (
-              <tr>
-                <td colSpan={5}>Aucune analyse.</td>
-              </tr>
-            ) : null}
           </tbody>
         </table>
       </div>
+      )}
     </div>
   )
 }
